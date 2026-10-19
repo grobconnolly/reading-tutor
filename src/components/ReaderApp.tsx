@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CoachBar } from "@/components/CoachBar";
 import { HomeScreen } from "@/components/screens/HomeScreen";
-import { LoginScreen } from "@/components/screens/LoginScreen";
+import { LoginScreen, type LoginResult } from "@/components/screens/LoginScreen";
 import { QuizScreen } from "@/components/screens/QuizScreen";
 import { ReadScreen } from "@/components/screens/ReadScreen";
 import { ResultsScreen, type ResultsView } from "@/components/screens/ResultsScreen";
@@ -12,10 +12,13 @@ import { SetupScreen, type SetupData } from "@/components/screens/SetupScreen";
 import { WordPracticeScreen } from "@/components/screens/WordPracticeScreen";
 import { useAppState } from "@/hooks/useAppState";
 import { useCoach } from "@/hooks/useCoach";
+import { verifyPin } from "@/lib/data";
 import { checkPassageFor, type Passage } from "@/lib/passages";
-import { checkFinalLevel, checkPassed, nextCheckLevel, nextLevelAfterPractice, RULES, sessionCounts, starsFor, type CheckState, type ReadResult } from "@/lib/scoring";
+import { alreadyEarnedGreeting, goalHitLine, moreStoriesLine } from "@/lib/reward";
+import { checkPassed, nextCheckLevel, RULES, type CheckState, type ReadResult } from "@/lib/scoring";
+import type { SaveSessionResult, SessionPayload } from "@/lib/sessionSave";
 import { hasSR } from "@/lib/speech";
-import { countedThisWeek, isSetupComplete, newId, PARENT_UNLOCK_KEY, pickPassage, streak, trickyWords, type Reader, type SessionRec } from "@/lib/store";
+import { countedThisWeek, isSetupComplete, PARENT_UNLOCK_KEY, pickPassage, streak, trickyWords, type Reader } from "@/lib/store";
 
 type Screen =
   | { name: "loading" }
@@ -32,15 +35,18 @@ interface Flow {
   passage?: Passage;
   result?: ReadResult;
   check?: CheckState;
+  /** Words she passed in word practice this session (wins++ when the session is saved). */
+  won: string[];
 }
 
 const DEFAULT_INTRO = "Tap start reading, then read the story out loud. If you get stuck, I'll help.";
 const COACH_SCREENS = new Set(["home", "read", "words", "quiz", "results"]);
+const UNSAVED_NOTE = "I couldn't save this story. Check the internet connection and try the next one.";
 
 /** The reader's whole experience: login, home, read, word practice, quiz, results. One state machine, as in version 1. */
 export function ReaderApp() {
   const router = useRouter();
-  const { state, update, getState } = useAppState();
+  const { state, error, refresh, getState, saveSetup, recordWords, saveSession } = useAppState();
   const coach = useCoach();
   const [readerId, setReaderId] = useState<string | null>(null);
   const readerIdRef = useRef<string | null>(null);
@@ -69,9 +75,6 @@ export function ReaderApp() {
     const s = getState();
     return s?.readers.find((r) => r.id === readerIdRef.current) ?? null;
   };
-  const updReader = (fn: (r: Reader) => void) => {
-    update((d) => { const r = d.readers.find((x) => x.id === readerIdRef.current); if (r) fn(r); });
-  };
 
   /* ---------- home ---------- */
 
@@ -85,8 +88,8 @@ export function ReaderApp() {
     const left = r.goal - done;
     coach.say(
       !r.baseline ? `Hi ${r.name}! I'm Coach Juno. First, let's do a quick reading check so I can find stories that are just right for you.`
-      : won ? `Hi ${r.name}! You already earned your ${r.reward} dollars this week. Keep reading to get even stronger!`
-      : `Hi ${r.name}! ${left} more ${left === 1 ? "story" : "stories"} this week to earn ${r.reward} dollars.`,
+      : won ? alreadyEarnedGreeting(r, r.name)
+      : `Hi ${r.name}! ${moreStoriesLine(r, left)}`,
     );
   }
 
@@ -105,14 +108,14 @@ export function ReaderApp() {
     if (!r) return;
     const { p, timesRead } = pickPassage(r);
     // Milestone 5: once every passage at her level has been read twice, ask /api/story for a new one.
-    flow.current = { mode: "practice", passage: p };
+    flow.current = { mode: "practice", passage: p, won: [] };
     openReading(p, timesRead >= 1 ? "Read it again. Rereading makes you faster." : "");
   }
 
   function startCheck() {
     const r = cur();
     if (!r) return;
-    flow.current = { mode: "check", check: { tested: {}, count: 0, ids: [], current: r.startLevel } };
+    flow.current = { mode: "check", check: { tested: {}, count: 0, ids: [], current: r.startLevel }, won: [] };
     nextCheckPassage(r.startLevel, true);
   }
 
@@ -127,12 +130,7 @@ export function ReaderApp() {
   function onReadingFinished(result: ReadResult) {
     const f = flow.current!;
     f.result = result;
-    updReader((r) => {
-      for (const w of result.missed) {
-        const t = r.trouble[w] ?? (r.trouble[w] = { miss: 0, win: 0 });
-        t.miss++;
-      }
-    });
+    f.won = [];
     void afterReading();
   }
 
@@ -140,6 +138,8 @@ export function ReaderApp() {
     const f = flow.current!;
     const r = f.result!;
     if (r.finishedPct < RULES.minFinishToSave) {
+      // Too short to save as a session, but the words she missed still count as tricky, as in version 1.
+      if (r.missed.length && readerIdRef.current) void recordWords(readerIdRef.current, r.missed, []);
       await coach.say("Let's keep going next time. Every page counts!");
       goHome();
       return;
@@ -157,10 +157,13 @@ export function ReaderApp() {
 
   function onWordResult(word: string, hit: boolean) {
     if (!hit) return;
-    updReader((r) => {
-      const t = r.trouble[word] ?? (r.trouble[word] = { miss: 0, win: 0 });
-      t.win++;
-    });
+    const f = flow.current;
+    if (!f) return;
+    if (f.mode === "tricky") {
+      if (readerIdRef.current) void recordWords(readerIdRef.current, [], [word]);
+    } else {
+      f.won.push(word);
+    }
   }
 
   async function onWordsDone(wins: number) {
@@ -182,7 +185,7 @@ export function ReaderApp() {
       coach.say("No tricky words yet. Read a story and I'll save the hard ones here.");
       return;
     }
-    flow.current = { mode: "tricky" };
+    flow.current = { mode: "tricky", won: [] };
     setWordsKey((k) => k + 1);
     setScreen({ name: "words", list, intro: "Let's practice your tricky words." });
   }
@@ -197,86 +200,86 @@ export function ReaderApp() {
     const f = flow.current!;
     const r = f.result!;
     const rd = cur()!;
-    const counts = sessionCounts(r.finishedPct);
-    const before = countedThisWeek(rd);
-    const stars = starsFor(r.acc, comp, compTotal);
+    const p = f.passage!;
     const mode = f.mode === "check" ? "check" : "practice";
-    const sess: SessionRec = {
-      id: newId(), date: new Date().toISOString(), mode, passageId: f.passage!.id, title: f.passage!.title, level: f.passage!.level,
-      wcpm: r.wcpm, acc: Math.round(r.acc * 100), comp, compTotal, missed: r.missed, helps: r.helps, counts, stars,
-    };
-    const newLevel = mode === "practice" ? nextLevelAfterPractice(rd.level, r.acc, comp, compTotal) : rd.level;
-    const levelMsg: "up" | "down" | "" = newLevel > rd.level ? "up" : newLevel < rd.level ? "down" : "";
-    updReader((x) => {
-      x.sessions.push(sess);
-      x.stars += stars;
-      x.level = newLevel;
-    });
-    const stats = { stars, wcpm: sess.wcpm, acc: sess.acc, comp, compTotal };
 
+    // For a reading check, decide where the check goes next before saving, so the server can
+    // record the final level and baseline on the last story.
+    let next: number | null = null;
     if (f.mode === "check") {
       const ck = f.check!;
       ck.count++;
-      const L = ck.current;
       const pass = checkPassed(r.acc, comp);
-      ck.tested[L] = pass;
-      ck.ids.push(f.passage!.id);
-      const next = nextCheckLevel(ck.tested, L, pass, ck.count);
+      ck.tested[ck.current] = pass;
+      ck.ids.push(p.id);
+      next = nextCheckLevel(ck.tested, ck.current, pass, ck.count);
+    }
+
+    const endedAt = r.endedAt ?? Date.now();
+    const payload: SessionPayload = {
+      readerId: rd.id, mode, passageId: p.id,
+      startedAt: new Date(r.startedAt ?? endedAt).toISOString(), endedAt: new Date(endedAt).toISOString(),
+      wordsTotal: r.total, wordsAttempted: r.attempted, wordsCorrect: r.ok, accuracy: r.acc, wcpm: r.wcpm,
+      compRight: comp, compTotal, helpedWords: r.helped, missedWords: r.missed, wonWords: f.won, finishedPct: r.finishedPct,
+      check: f.mode === "check" ? { tested: f.check!.tested, ids: f.check!.ids, done: next == null } : undefined,
+    };
+    // Saves the session, bumps trouble words, recomputes the level and the reward week on the server.
+    const res = await saveSession(payload, { title: p.title, level: p.level });
+    const note = res.saved ? null : UNSAVED_NOTE;
+    const stats = { stars: res.stars, wcpm: r.wcpm, acc: Math.round(r.acc * 100), comp, compTotal, note };
+    const levelMsg: "up" | "down" | "" = res.level > res.levelBefore ? "up" : res.level < res.levelBefore ? "down" : "";
+
+    if (f.mode === "check") {
+      const ck = f.check!;
       if (next != null) {
-        setScreen({ name: "results", view: { kicker: "Reading check", title: `Story ${ck.count} done!`, ...stats, nextLabel: "Next story", onNext: () => nextCheckPassage(next, false) } });
+        const goTo = next;
+        setScreen({ name: "results", view: { kicker: "Reading check", title: `Story ${ck.count} done!`, ...stats, nextLabel: "Next story", onNext: () => nextCheckPassage(goTo, false) } });
         await coach.say("Great job. Let's try one more story.");
         return;
       }
-      const lvl = checkFinalLevel(ck.tested);
-      updReader((x) => {
-        x.level = lvl;
-        x.baseline = { date: new Date().toISOString(), level: lvl, wcpm: sess.wcpm, ids: ck.ids };
-      });
       setScreen({ name: "results", view: { kicker: "Reading check done", title: "You finished the reading check!", ...stats, nextLabel: "Read a story", onNext: startPractice } });
       await coach.say("You finished the reading check! Now I know which stories are just right for you.");
-      await goalCheck(before);
+      await goalCheck(res);
       return;
     }
 
     const n = cur()!.sessions.length;
     setScreen({ name: "results", view: { kicker: "Nice work", title: ["You finished the story!", "Story complete!", "Way to go!"][n % 3], ...stats, nextLabel: "Read another", onNext: startPractice } });
-    let line = stars === 3 ? "Three stars! Amazing." : stars === 2 ? "Two stars! Great job." : "You earned a star for finishing.";
+    let line = res.stars === 3 ? "Three stars! Amazing." : res.stars === 2 ? "Two stars! Great job." : "You earned a star for finishing.";
     if (levelMsg === "up") line += " You're ready for harder stories. Level up!";
     await coach.say(line);
-    if (!counts) coach.bubble("Read at least most of the story for it to count toward your goal.");
-    await goalCheck(before);
+    if (!res.counts) coach.bubble("Read at least most of the story for it to count toward your goal.");
+    await goalCheck(res);
     // Milestone 5: ask /api/coach-note for two sentences of praise and a tip, and show them in the note.
   }
 
-  async function goalCheck(before: number) {
+  async function goalCheck(res: SaveSessionResult) {
     const r = cur();
     if (!r) return;
-    const after = countedThisWeek(r);
-    if (before < r.goal && after >= r.goal) {
-      await coach.say(`You hit your weekly goal! You earned ${r.reward} dollars!`);
-    } else if (after < r.goal && after > before) {
-      const left = r.goal - after;
-      await coach.say(`${left} more ${left === 1 ? "story" : "stories"} this week to earn ${r.reward} dollars.`);
+    if (res.goalCrossed) {
+      await coach.say(goalHitLine(r));
+    } else if (res.countedAfter < r.goal && res.countedAfter > res.countedBefore) {
+      await coach.say(moreStoriesLine(r, r.goal - res.countedAfter));
     }
   }
 
   /* ---------- login / setup ---------- */
 
-  function loginReader(id: string, pin: string): boolean {
-    const r = getState()?.readers.find((x) => x.id === id);
-    if (!r || !r.pin || r.pin !== pin) return false;
+  async function loginReader(id: string, pin: string): Promise<LoginResult> {
+    const res = await verifyPin(id, pin);
+    if (!res.ok) return res;
     readerIdRef.current = id;
     setReaderId(id);
     goHome();
-    return true;
+    return { ok: true };
   }
 
-  function loginParent(pin: string): boolean {
-    const s = getState();
-    if (!s?.parentPin || s.parentPin !== pin) return false;
+  async function loginParent(pin: string): Promise<LoginResult> {
+    const res = await verifyPin("parent", pin);
+    if (!res.ok) return res;
     try { sessionStorage.setItem(PARENT_UNLOCK_KEY, "1"); } catch { /* ignore */ }
     router.push("/parent");
-    return true;
+    return { ok: true };
   }
 
   function logout() {
@@ -285,27 +288,45 @@ export function ReaderApp() {
     readerIdRef.current = null;
     setReaderId(null);
     setScreen({ name: "login" });
+    void refresh();
   }
 
-  function onSetup(d: SetupData) {
-    update((s) => {
-      s.parentPin = d.parentPin;
-      for (const r of s.readers) {
-        const x = d.readers.find((y) => y.id === r.id);
-        if (!x) continue;
-        r.pin = x.pin;
-        r.interests = x.interests;
-        r.goal = d.goal;
-        r.reward = d.reward;
-      }
-    });
+  async function onSetup(d: SetupData): Promise<string | null> {
+    const err = await saveSetup(d);
+    if (err) return err;
     setScreen({ name: "login" });
+    return null;
   }
 
   /* ---------- render ---------- */
 
+  if (error && !state) {
+    return (
+      <main className="wrap">
+        <section className="card stack-sm">
+          <h2>Couldn&rsquo;t load</h2>
+          <p className="err">{error}</p>
+          <div className="row">
+            <button className="primary" type="button" onClick={() => void refresh()}>Try again</button>
+            <form action="/auth/signout" method="post"><button className="link" type="submit">Sign out</button></form>
+          </div>
+        </section>
+      </main>
+    );
+  }
   if (!state || screen.name === "loading") {
     return <main className="wrap"><p className="muted">Loading…</p></main>;
+  }
+  if (!state.readers.length) {
+    return (
+      <main className="wrap">
+        <section className="card stack-sm">
+          <h2>No readers yet</h2>
+          <p className="muted">This account has no reader profiles. Run the Supabase migrations from the README, then sign out and back in.</p>
+          <form action="/auth/signout" method="post"><button type="submit">Sign out</button></form>
+        </section>
+      </main>
+    );
   }
   const reader = state.readers.find((r) => r.id === readerId) ?? null;
 

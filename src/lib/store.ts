@@ -1,6 +1,7 @@
-/* App state for milestone 1: everything lives in localStorage on the device. Milestone 2 moves it to Supabase. */
+/* The client's view of each reader, built from Supabase rows (see lib/db/mapping.ts), plus the derived values the screens use. */
 
 import { PASSAGES, type Passage } from "./passages";
+import type { RewardKind } from "./reward";
 import { dayKey, streakFromDays, weekKey } from "./time";
 
 export interface TroubleEntry {
@@ -10,7 +11,7 @@ export interface TroubleEntry {
 
 export interface SessionRec {
   id: string;
-  /** ISO timestamp. */
+  /** ISO timestamp of when the reading ended. */
   date: string;
   mode: "check" | "practice";
   passageId: string;
@@ -29,6 +30,7 @@ export interface SessionRec {
 }
 
 export interface Baseline {
+  id: string;
   date: string;
   level: number;
   wcpm: number | null;
@@ -40,8 +42,8 @@ export interface Reader {
   name: string;
   /** School grade. Never shown to the reader. */
   grade: number;
-  /** 4 digits, or null until set up. Convenience lock, not security. */
-  pin: string | null;
+  /** Whether her 4-digit PIN is set. The PIN is hashed in the database and checked server-side; it never reaches the browser. */
+  pinSet: boolean;
   interests: string;
   /** Current reading level 1..7. */
   level: number;
@@ -49,82 +51,33 @@ export interface Reader {
   startLevel: number;
   /** Stories per week for the reward. */
   goal: number;
-  /** Weekly reward in dollars. */
+  /** Weekly reward in dollars (when rewardKind is "cash"). */
   reward: number;
+  /** The parent's choice: cash, or a prize described by rewardLabel. */
+  rewardKind: RewardKind;
+  /** What the prize is, e.g. "a trip to the bookstore". Empty until the parent fills it in. */
+  rewardLabel: string;
   baseline: Baseline | null;
+  /** Oldest first. */
   sessions: SessionRec[];
   trouble: Record<string, TroubleEntry>;
   /** weekKey -> ISO timestamp paid. */
   paidWeeks: Record<string, string>;
+  /** Sum of stars over all sessions. */
   stars: number;
   aiPassages: Passage[];
 }
 
 export interface AppState {
-  version: 2;
-  parentPin: string | null;
+  parentPinSet: boolean;
   readers: Reader[];
 }
 
-export const STORAGE_KEY = "reading-coach.v2";
+/** sessionStorage flag: the parent PIN was entered in this tab. */
 export const PARENT_UNLOCK_KEY = "reading-coach.parent-unlocked";
 
-function blankReader(id: string, name: string, grade: number, startLevel: number): Reader {
-  return {
-    id, name, grade, pin: null, interests: "", level: startLevel, startLevel, goal: 5, reward: 5,
-    baseline: null, sessions: [], trouble: {}, paidWeeks: {}, stars: 0, aiPassages: [],
-  };
-}
-
-/** Stella (grade 5, starts at level 3) and Penny (grade 3, starts at level 2). */
-export function defaultState(): AppState {
-  return {
-    version: 2,
-    parentPin: null,
-    readers: [blankReader("stella", "Stella", 5, 3), blankReader("penny", "Penny", 3, 2)],
-  };
-}
-
-export function loadState(): AppState {
-  if (typeof window === "undefined") return defaultState();
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState();
-    const parsed = JSON.parse(raw) as Partial<AppState>;
-    const base = defaultState();
-    const readers = (parsed.readers ?? []).map((r) => {
-      const tmpl = base.readers.find((b) => b.id === r.id) ?? blankReader(r.id, r.name, r.grade, r.startLevel ?? 3);
-      return { ...tmpl, ...r };
-    });
-    // Keep both girls present even if an older save only had one.
-    for (const b of base.readers) if (!readers.some((r) => r.id === b.id)) readers.push(b);
-    return { version: 2, parentPin: parsed.parentPin ?? null, readers };
-  } catch {
-    return defaultState();
-  }
-}
-
-export function saveState(s: AppState): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  } catch {
-    /* storage full or blocked: the session still works, it just won't persist */
-  }
-}
-
-export function clearState(): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-    window.sessionStorage.removeItem(PARENT_UNLOCK_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
 export function isSetupComplete(s: AppState): boolean {
-  return !!s.parentPin && s.readers.every((r) => !!r.pin);
+  return s.parentPinSet && s.readers.length > 0 && s.readers.every((r) => r.pinSet);
 }
 
 export function isValidPin(v: string): boolean {
@@ -191,9 +144,4 @@ export function pickPassage(r: Reader, level: number = r.level): { p: Passage; t
   const sorted = pool.slice().sort((a, b) => (counts[a.id] || 0) - (counts[b.id] || 0) || Math.random() - 0.5);
   const p = sorted[0];
   return { p, timesRead: counts[p.id] || 0 };
-}
-
-export function newId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return "s-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 }

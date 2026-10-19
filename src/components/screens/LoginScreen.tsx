@@ -5,14 +5,20 @@ import type { Reader } from "@/lib/store";
 
 type Who = { kind: "reader"; id: string; name: string } | { kind: "parent" };
 
+export interface LoginResult {
+  ok: boolean;
+  message?: string;
+}
+
 export function LoginScreen({ readers, onReader, onParent }: {
   readers: Reader[];
-  onReader: (id: string, pin: string) => boolean;
-  onParent: (pin: string) => boolean;
+  onReader: (id: string, pin: string) => Promise<LoginResult>;
+  onParent: (pin: string) => Promise<LoginResult>;
 }) {
   const [who, setWho] = useState<Who | null>(null);
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -25,12 +31,14 @@ export function LoginScreen({ readers, onReader, onParent }: {
     setErr("");
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!who) return;
-    const ok = who.kind === "reader" ? onReader(who.id, pin) : onParent(pin);
-    if (!ok) {
-      setErr("That PIN doesn't match. Try again.");
+    if (!who || busy) return;
+    setBusy(true);
+    const res = who.kind === "reader" ? await onReader(who.id, pin) : await onParent(pin);
+    setBusy(false);
+    if (!res.ok) {
+      setErr(res.message ?? "That PIN doesn't match. Try again.");
       setPin("");
       input.current?.focus();
     }
@@ -62,7 +70,7 @@ export function LoginScreen({ readers, onReader, onParent }: {
           <input ref={input} className="pin" type="password" inputMode="numeric" maxLength={4} autoComplete="off" aria-label="PIN"
             value={pin} onChange={(e) => setPin(e.target.value)} />
           <div className="row">
-            <button className="primary" type="submit">Log in</button>
+            <button className="primary" type="submit" disabled={busy}>{busy ? "Checking…" : "Log in"}</button>
             <span className="err">{err}</span>
           </div>
         </form>
