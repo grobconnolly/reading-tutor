@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advance, norm, toReadWords, tokenize, wordMatch, type AlignState } from "../words";
+import { advance, advanceTokens, norm, toReadWords, tokenize, transcriptHasWord, wordMatch, type AlignState } from "../words";
 
 function state(text: string): AlignState {
   const words = toReadWords(text);
@@ -26,6 +26,13 @@ describe("wordMatch", () => {
     expect(wordMatch("volcanos", "volcanoes")).toBe(true);
     expect(wordMatch("bilumunescence", "bioluminescence")).toBe(true);
     expect(wordMatch("cat", "cot")).toBe(false);
+  });
+  it("tolerates recognizer padding on names, scaled by the longer word", () => {
+    expect(wordMatch("carlowes", "carlos")).toBe(true);
+    expect(wordMatch("carlas", "carlos")).toBe(true);
+    expect(wordMatch("carl", "carlos")).toBe(false);
+    expect(wordMatch("the", "there")).toBe(false);
+    expect(wordMatch("cat", "catch")).toBe(false);
   });
   it("accepts plural / singular slips on 4+ letter words", () => {
     expect(wordMatch("goats", "goat")).toBe(true);
@@ -57,5 +64,37 @@ describe("advance", () => {
     st.p = 1;
     advance(st, "dog");
     expect(st.status[0]).toBe("help");
+  });
+});
+
+describe("advanceTokens", () => {
+  it("joins split tokens so a name read correctly is not marked skipped", () => {
+    const st = state("Carlos was the youngest player.");
+    expect(advanceTokens(st, tokenize("car los was the youngest player"))).toBe(5);
+    expect(st.status).toEqual(["ok", "ok", "ok", "ok", "ok"]);
+  });
+  it("joins three tokens for a long word", () => {
+    const st = state("Carlos was tired.");
+    advanceTokens(st, tokenize("car lo s was tired"));
+    expect(st.status[0]).toBe("ok");
+    expect(st.p).toBe(3);
+  });
+  it("accepts one heard token for two glued story words", () => {
+    const st = state("His base ball team won.");
+    advanceTokens(st, tokenize("his baseball team won"));
+    expect(st.status).toEqual(["ok", "ok", "ok", "ok", "ok"]);
+  });
+  it("still skips words that were really skipped", () => {
+    const st = state("Carlos was the youngest player.");
+    advanceTokens(st, tokenize("carlos was the player"));
+    expect(st.status).toEqual(["ok", "ok", "ok", "skip", "ok"]);
+  });
+});
+
+describe("transcriptHasWord", () => {
+  it("finds a split name in a practice transcript", () => {
+    expect(transcriptHasWord("car los", "carlos")).toBe(true);
+    expect(transcriptHasWord("the word is carlos", "carlos")).toBe(true);
+    expect(transcriptHasWord("carl", "carlos")).toBe(false);
   });
 });

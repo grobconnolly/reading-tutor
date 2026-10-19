@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Coach } from "@/hooks/useCoach";
 import { hasSR, listenOnce, MIC_BLOCKED_MSG, type Listener } from "@/lib/speech";
-import { tokenize, wordMatch } from "@/lib/words";
+import { transcriptHasWord } from "@/lib/words";
 
 const PRAISE = ["Yes! Perfect.", "You got it!", "Nice job!"];
 
@@ -66,7 +66,7 @@ export function WordPracticeScreen({ coach, list, intro, onResult, onDone }: {
     listener.current = null;
     setMicOn(false);
     coachRef.current.setListening(false);
-    const hit = alts.some((a) => tokenize(a).some((t) => wordMatch(t, w)));
+    const hit = alts.some((a) => transcriptHasWord(a, w));
     cb.current.onResult(w, hit);
     if (hit) {
       wins.current++;
