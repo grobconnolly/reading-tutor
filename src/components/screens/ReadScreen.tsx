@@ -4,8 +4,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import type { Coach } from "@/hooks/useCoach";
 import type { Passage } from "@/lib/passages";
 import { RULES, scoreReading, type ReadResult } from "@/lib/scoring";
-import { getSR, hasSR, MIC_BLOCKED_MSG, type SpeechRecognizer } from "@/lib/speech";
-import { advance, cleanWord, toReadWords, tokenize, type AlignState, type ReadWord, type WordStatus } from "@/lib/words";
+import { getSR, hasSR, MIC_BLOCKED_MSG, type SpeechRecognizer, type SRResult } from "@/lib/speech";
+import { advanceTokens, cleanWord, toReadWords, tokenize, type AlignState, type ReadWord, type WordStatus } from "@/lib/words";
 
 /** Mutable reading state. Lives in a ref so recognizer callbacks and timers always see the latest values. */
 interface Engine extends AlignState {
@@ -18,10 +18,47 @@ interface Engine extends AlignState {
   nudged: boolean;
   openedAt: number;
   helps: string[];
+  /** Interim text the recognizer has not finalized yet. Safari can end a segment without finalizing it. */
+  pendingInterim: string;
 }
 
 function freshEngine(words: ReadWord[]): Engine {
-  return { words, status: words.map(() => "todo"), p: 0, startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [] };
+  return { words, status: words.map(() => "todo"), p: 0, startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "" };
+}
+
+/** She is being heard: reset the stall clock, and the WCPM clock if this is committed progress. */
+function markActivity(R: Engine, committed: boolean) {
+  const now = Date.now();
+  R.lastProg = now;
+  if (committed) R.endT = now;
+  if (R.startT == null) R.startT = R.openedAt + Math.min(1500, now - R.openedAt);
+}
+
+/** Apply a final result. The recognizer offers a few guesses; keep the one that fits the story best. */
+function commitFinal(R: Engine, r: SRResult) {
+  let best: AlignState | null = null;
+  let bestGain = -1;
+  const n = Math.max(1, r.length);
+  for (let a = 0; a < n; a++) {
+    const alt = r[a];
+    if (!alt) continue;
+    const trial: AlignState = { words: R.words, status: R.status.slice(), p: R.p };
+    const gain = advanceTokens(trial, tokenize(alt.transcript));
+    if (gain > bestGain) { bestGain = gain; best = trial; }
+  }
+  if (best && bestGain > 0) {
+    R.status = best.status;
+    R.p = best.p;
+    markActivity(R, true);
+  }
+}
+
+/** Keep whatever was heard but never finalized. */
+function commitPending(R: Engine) {
+  if (!R.pendingInterim) return;
+  const gain = advanceTokens(R, tokenize(R.pendingInterim));
+  R.pendingInterim = "";
+  if (gain > 0) markActivity(R, true);
 }
 
 export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQuit }: {
@@ -71,6 +108,7 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     if (!R.active || finished.current) return;
     finished.current = true;
     R.active = false;
+    commitPending(R);
     stopRec();
     clearTicker();
     render();
@@ -96,7 +134,7 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     rec.lang = "en-US";
     rec.continuous = true;
     rec.interimResults = true;
-    rec.maxAlternatives = 1;
+    rec.maxAlternatives = 3;
     rec.onresult = (e) => {
       const R = eng.current;
       if (my !== recGen.current || !R.active || R.paused) return;
@@ -104,22 +142,19 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
         if (r.isFinal) {
-          const before = R.p;
-          tokenize(r[0].transcript).forEach((t) => advance(R, t));
-          if (R.p !== before) {
-            const now = Date.now();
-            R.lastProg = now;
-            R.endT = now;
-            if (R.startT == null) R.startT = R.openedAt + Math.min(1500, now - R.openedAt);
-          }
+          commitFinal(R, r);
+          R.pendingInterim = "";
         } else {
           interim += r[0].transcript + " ";
         }
       }
       if (interim) {
-        // Preview interim words without committing them.
+        // Preview interim words without committing them, but count them as activity so the
+        // stall help never fires on a word she is in the middle of saying.
+        R.pendingInterim = interim;
         const pv: AlignState = { words: R.words, status: R.status.slice(), p: R.p };
-        tokenize(interim).forEach((t) => advance(pv, t));
+        advanceTokens(pv, tokenize(interim));
+        if (pv.p > R.p) markActivity(R, false);
         render(pv);
       } else {
         render();
@@ -138,6 +173,11 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
       if (my !== recGen.current) return;
       const R = eng.current;
       if (!R.active || R.paused) return;
+      if (R.pendingInterim) {
+        commitPending(R);
+        render();
+        if (R.p >= R.words.length) { finishReading(); return; }
+      }
       rapidEnds.current = Date.now() - startedAt < 700 ? rapidEnds.current + 1 : 0;
       if (rapidEnds.current >= 6) { stopWithMessage("I'm having trouble listening. Tap start reading to try again."); return; }
       try { startRecInner(); } catch { /* ignore */ }

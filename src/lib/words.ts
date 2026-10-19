@@ -54,8 +54,12 @@ export function wordMatch(heard: string, target: string): boolean {
   if (NUM[h]) h = NUM[h];
   if (h === t) return true;
   if ((SAME[t] || []).map(norm).includes(h)) return true;
-  if (t.length >= 5 && lev(h, t) <= 1) return true;
-  if (t.length >= 8 && lev(h, t) <= 2) return true;
+  // Edit-distance tolerance scales with the longer of the two, so a name the recognizer pads
+  // ("carlowes" for "carlos") still counts, while short words stay strict.
+  const L = Math.max(h.length, t.length);
+  if (L >= 5 && lev(h, t) <= 1) return true;
+  if (L >= 8 && lev(h, t) <= 2) return true;
+  if (L >= 12 && lev(h, t) <= 3) return true;
   if (t.length >= 4 && (h === t + "s" || t === h + "s")) return true;
   return false;
 }
@@ -91,6 +95,39 @@ export function advance(st: AlignState, tok: string): boolean {
       st.p = j + 1;
       return true;
     }
+  }
+  return false;
+}
+
+/**
+ * Advance with a whole heard phrase. Recognizers split names and long words ("car los", "base ball")
+ * and glue short ones ("baseball" for "base ball"), so besides single tokens this tries joining up to
+ * three adjacent heard tokens, and one heard token against two adjacent story words.
+ * Returns how many story words were advanced.
+ */
+export function advanceTokens(st: AlignState, tokens: string[]): number {
+  const start = st.p;
+  for (let i = 0; i < tokens.length; i++) {
+    if (advance(st, tokens[i])) continue;
+    if (i + 1 < tokens.length && advance(st, tokens[i] + tokens[i + 1])) { i += 1; continue; }
+    if (i + 2 < tokens.length && advance(st, tokens[i] + tokens[i + 1] + tokens[i + 2])) { i += 2; continue; }
+    const a = st.words[st.p], b = st.words[st.p + 1];
+    if (a && b && a.norm.length >= 2 && b.norm.length >= 2 && wordMatch(tokens[i], a.norm + b.norm)) {
+      st.status[st.p] = "ok";
+      st.status[st.p + 1] = "ok";
+      st.p += 2;
+    }
+  }
+  return st.p - start;
+}
+
+/** Does a heard transcript contain the target word, allowing for split tokens? Used by word practice. */
+export function transcriptHasWord(transcript: string, target: string): boolean {
+  const toks = tokenize(transcript);
+  for (let i = 0; i < toks.length; i++) {
+    if (wordMatch(toks[i], target)) return true;
+    if (i + 1 < toks.length && wordMatch(toks[i] + toks[i + 1], target)) return true;
+    if (i + 2 < toks.length && wordMatch(toks[i] + toks[i + 1] + toks[i + 2], target)) return true;
   }
   return false;
 }
