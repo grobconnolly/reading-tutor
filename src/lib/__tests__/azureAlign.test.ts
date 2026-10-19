@@ -154,6 +154,22 @@ describe("applyAzureSegment: words she added or swapped (Rob's iPad cases)", () 
     expect(st.inserted).toEqual([]);
     expect(st.p).toBe(1);
   });
+  it("follows a jumped line when three heard words in a row match down the page, skipping what was passed over", () => {
+    const st = state("one two three four five six seven eight nine ten eleven twelve");
+    expect(applyAzureSegment(st, seg([["one"], ["eight"], ["nine"], ["ten"]]))).toBe(10);
+    expect(st.status.slice(0, 10)).toEqual(["ok", "skip", "skip", "skip", "skip", "skip", "skip", "ok", "ok", "ok"]);
+    expect(st.inserted).toEqual([]);
+  });
+  it("does not jump on two matching words, and drops the words heard just before a jump without counting them", () => {
+    const st = state("one two three four five six seven eight nine ten eleven twelve");
+    applyAzureSegment(st, seg([["one"], ["eight"], ["nine"]]));
+    expect(st.p).toBe(1);
+    expect(st.inserted).toEqual([]);
+    const st2 = state("one two three four five six seven eight nine ten eleven twelve");
+    applyAzureSegment(st2, seg([["one"], ["blah"], ["nine"], ["ten"], ["eleven"]]));
+    expect(st2.p).toBe(11);
+    expect(st2.inserted).toEqual([]);
+  });
   it("counts additions at the end of a segment too", () => {
     const st = state("The dog ran.");
     applyAzureSegment(st, seg([["the"], ["dog"], ["really"], ["fast"]]));

@@ -109,6 +109,9 @@ const misread = (w: AzureWord) => w.errorType === "Mispronunciation" || w.accura
 const FAR_AHEAD = 12;
 /** How far back a heard word may match an already-read word and count as a repeat or self-correction. */
 const REPEAT_BACK = 4;
+/** A jumped line: this many consecutive heard words matching consecutive story words up to this far ahead. */
+const JUMP_CONFIRM = 3;
+const JUMP_SCAN = 40;
 
 /** The word just matched (at p-1) was heard with this score: keep the score and downgrade a misread. */
 function settle(st: AzureAlignState, accuracy: number, bad: boolean): void {
@@ -135,6 +138,26 @@ function resolvePending(st: AzureAlignState, pending: string[], from: number, to
 function isRepeat(st: AlignState, tok: string): boolean {
   for (let i = Math.max(0, st.p - REPEAT_BACK); i < st.p; i++) if (wordMatch(tok, st.words[i].norm)) return true;
   return false;
+}
+
+/**
+ * She jumped a line: the heard word and the next two match three consecutive story words beyond the lookahead window.
+ * Returns where the first one lands, or -1. Without this, everything read after a jump would look like added words
+ * until stall help caught up.
+ */
+function findJump(st: AlignState, ws: AzureWord[], i: number): number {
+  const toks: string[] = [];
+  for (let j = i; j < ws.length && toks.length < JUMP_CONFIRM; j++) {
+    if (!spoken(ws[j])) break;
+    const t = norm(ws[j].word);
+    if (t) toks.push(t);
+  }
+  if (toks.length < JUMP_CONFIRM) return -1;
+  const n = st.words.length;
+  for (let k = st.p + 5; k + JUMP_CONFIRM <= n && k <= st.p + JUMP_SCAN; k++) {
+    if (toks.every((t, c) => wordMatch(t, st.words[k + c].norm))) return k;
+  }
+  return -1;
 }
 
 /** A word that sits further ahead than the lookahead reaches: she may have jumped a line, which stall help sorts out. */
@@ -214,7 +237,18 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
       resolvePending(st, pending, before, before);
       continue;
     }
-    // Nowhere to put it. A repeat is fine, and a word from further down the page is a jump, not an addition.
+    // Nowhere to put it near the pointer. Three words in a row from further down the page mean she jumped a line:
+    // follow her there (the words in between are skipped) and give the words heard before that the benefit of the doubt.
+    const k = findJump(st, ws, i);
+    if (k >= 0) {
+      for (let x = st.p; x < k; x++) if (st.status[x] === "todo") st.status[x] = SMALL.has(st.words[x].norm) ? "soft" : "skip";
+      st.status[k] = "ok";
+      st.p = k + 1;
+      settle(st, w.accuracy, bad);
+      pending.length = 0;
+      continue;
+    }
+    // A repeat is fine, and a lone word from further down the page is noise, not an addition.
     if (isRepeat(st, tok) || isFarAhead(st, tok)) continue;
     pending.push(tok);
   }
