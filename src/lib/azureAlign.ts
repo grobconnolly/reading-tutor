@@ -235,15 +235,30 @@ export function practicePassed(heard: PracticeHeard, word: string): boolean {
 /* ---------- hand-off to the results screen ---------- */
 
 let last: AzureScores | null = null;
+let lastWho: "azure" | "browser" | "mixed" | null = null;
 
 /**
- * The reading screen leaves the latest session's scores here and the results screen shows them. TODO(milestone 2):
- * pass ReadResult.azure through the session save instead and persist it in sessions.azure_scores.
+ * The reading screen leaves the latest session's scores (and which engine heard it) here and the results screen shows
+ * them. TODO(milestone 2): pass ReadResult.azure and .listener through the session save instead and persist the scores
+ * in sessions.azure_scores.
  */
-export function rememberAzureScores(scores: AzureScores | null | undefined): void {
+export function rememberAzureScores(scores: AzureScores | null | undefined, listener?: "azure" | "browser" | "mixed" | null): void {
   last = scores ?? null;
+  lastWho = listener ?? null;
 }
 
 export function lastAzureScores(): AzureScores | null {
   return last;
+}
+
+export function lastListener(): "azure" | "browser" | "mixed" | null {
+  return lastWho;
+}
+
+/** One line for the results screen: who listened, and what that means for the misread flags. */
+export function listenerNote(listener: "azure" | "browser" | "mixed" | null | undefined, browserName = "the browser"): string | null {
+  if (listener === "azure") return "Heard by Azure, which checks how each word was said.";
+  if (listener === "browser") return `Heard by ${browserName}: words said wrong could not be checked.`;
+  if (listener === "mixed") return `Heard by Azure, then ${browserName} after it dropped out: later words said wrong could not be checked.`;
+  return null;
 }

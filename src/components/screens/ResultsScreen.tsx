@@ -1,6 +1,8 @@
 "use client";
 
-import { lastAzureScores, type AzureScores } from "@/lib/azureAlign";
+import { lastAzureScores, lastListener, listenerNote, type AzureScores } from "@/lib/azureAlign";
+import type { Listener } from "@/lib/scoring";
+import { browserName } from "@/lib/speech";
 
 export interface ResultsView {
   kicker: string;
@@ -16,10 +18,13 @@ export interface ResultsView {
   note?: string | null;
   /** Azure's scores for the read (milestone 3). Until milestone 2 threads ReadResult.azure through, the reading screen leaves them in lastAzureScores(). */
   azure?: AzureScores | null;
+  /** Which engine heard the read; same hand-off as `azure` until milestone 2. */
+  listener?: Listener | null;
 }
 
 export function ResultsScreen({ view, onHome }: { view: ResultsView; onHome: () => void }) {
   const azure = view.azure ?? lastAzureScores();
+  const heardBy = listenerNote(view.listener ?? lastListener(), browserName());
   return (
     <section className="card stack">
       <p className="label">{view.kicker}</p>
@@ -41,6 +46,7 @@ export function ResultsScreen({ view, onHome }: { view: ResultsView; onHome: () 
           </>
         )}
       </div>
+      {heardBy && <p className="muted" style={{ fontSize: ".85rem", margin: 0 }}>{heardBy}</p>}
       {view.note && <p className="note">{view.note}</p>}
       <div className="row">
         <button className="primary big" type="button" onClick={view.onNext}>{view.nextLabel}</button>

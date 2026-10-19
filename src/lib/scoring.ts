@@ -21,7 +21,12 @@ export interface ReadResult {
   finishedPct: number;
   /** Azure's accuracy, fluency and completeness when Azure listened (milestone 3). TODO(milestone 2): save as sessions.azure_scores. */
   azure?: AzureScores;
+  /** Which engine heard the read: Azure can flag a word said wrong ("tired" for "tried"); the browser recognizer cannot. */
+  listener?: Listener;
 }
+
+/** "mixed" when Azure dropped out mid-story and the browser recognizer finished it. */
+export type Listener = "azure" | "browser" | "mixed";
 
 /** Thresholds, in one place so they are easy to tune. */
 export const RULES = {

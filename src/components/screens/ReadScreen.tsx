@@ -5,7 +5,7 @@ import type { Coach } from "@/hooks/useCoach";
 import type { Passage } from "@/lib/passages";
 import { applyAzureSegment, rememberAzureScores, summarizeAzure, type AzureAlignState, type AzureSegmentStat } from "@/lib/azureAlign";
 import { RULES, scoreReading, type ReadResult } from "@/lib/scoring";
-import { getSR, hasSR, listeningStatus, MIC_BLOCKED_MSG, prepareListening, type SpeechRecognizer, type SRResult } from "@/lib/speech";
+import { getSR, hasSR, listeningEngine, listeningStatus, MIC_BLOCKED_MSG, prepareListening, type ListenEngine, type SpeechRecognizer, type SRResult } from "@/lib/speech";
 import { advanceTokens, cleanWord, toReadWords, tokenize, type AlignState, type ReadWord, type WordStatus } from "@/lib/words";
 
 /** Mutable reading state. Lives in a ref so recognizer callbacks and timers always see the latest values. */
@@ -23,10 +23,12 @@ interface Engine extends AzureAlignState {
   pendingInterim: string;
   /** Azure only: fluency and length of each utterance it scored, for the session scores. */
   azureSegs: AzureSegmentStat[];
+  /** Every engine that listened during this read (Azure may hand over to the browser mid-story). */
+  listeners: Set<ListenEngine>;
 }
 
 function freshEngine(words: ReadWord[]): Engine {
-  return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "", azureSegs: [] };
+  return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "", azureSegs: [], listeners: new Set() };
 }
 
 /** She is being heard: reset the stall clock, and the WCPM clock if this is committed progress. */
@@ -128,7 +130,8 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     const result = scoreReading(R.words, R.status, R.p, R.startT, R.endT, R.helps.length);
     const azure = summarizeAzure(R, R.azureSegs);
     if (azure) result.azure = azure;
-    rememberAzureScores(azure);
+    if (R.listeners.size) result.listener = R.listeners.size > 1 ? "mixed" : R.listeners.has("azure") ? "azure" : "browser";
+    rememberAzureScores(azure, result.listener);
     onFinishRef.current(result);
   }, [stopRec, clearTicker, render]);
 
@@ -203,6 +206,8 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     try {
       rec.start();
       recRef.current = rec;
+      const engine = listeningEngine();
+      if (engine) eng.current.listeners.add(engine);
       setMicOn(true);
       setMicLabel(listeningStatus());
       coachRef.current.setListening(true);

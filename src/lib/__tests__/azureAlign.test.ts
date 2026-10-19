@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyAzureSegment, AZURE_RULES, lastAzureScores, parseAzureJson, practicePassed, rememberAzureScores, summarizeAzure, wordAccuracy,
+  applyAzureSegment, AZURE_RULES, lastAzureScores, lastListener, listenerNote, parseAzureJson, practicePassed, rememberAzureScores, summarizeAzure, wordAccuracy,
   type AzureAlignState, type AzureErrorType, type AzureSegment, type AzureWord,
 } from "../azureAlign";
 import { toReadWords } from "../words";
@@ -184,10 +184,20 @@ describe("word practice", () => {
 });
 
 describe("hand-off to the results screen", () => {
-  it("keeps the latest scores, or none", () => {
-    rememberAzureScores({ accuracy: 90, fluency: 80, completeness: 70 });
+  it("keeps the latest scores and listener, or none", () => {
+    rememberAzureScores({ accuracy: 90, fluency: 80, completeness: 70 }, "azure");
     expect(lastAzureScores()).toEqual({ accuracy: 90, fluency: 80, completeness: 70 });
-    rememberAzureScores(null);
+    expect(lastListener()).toBe("azure");
+    rememberAzureScores(null, "browser");
     expect(lastAzureScores()).toBeNull();
+    expect(lastListener()).toBe("browser");
+    rememberAzureScores(null);
+    expect(lastListener()).toBeNull();
+  });
+  it("explains which engine listened and what the browser cannot catch", () => {
+    expect(listenerNote("azure")).toMatch(/Azure/);
+    expect(listenerNote("browser", "Safari")).toMatch(/Safari.*could not be checked/);
+    expect(listenerNote("mixed", "Safari")).toMatch(/Azure, then Safari/);
+    expect(listenerNote(null)).toBeNull();
   });
 });

@@ -74,7 +74,7 @@ export async function prepareListening(): Promise<ListenEngine | null> {
   return engine;
 }
 
-function browserName(): string {
+export function browserName(): string {
   const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
   if (/Edg\//.test(ua)) return "Edge";
   if (/CriOS|Chrome\//.test(ua)) return "Chrome";
