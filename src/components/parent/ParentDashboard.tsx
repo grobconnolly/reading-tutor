@@ -132,7 +132,7 @@ function BothGirls({ readers }: { readers: Reader[] }) {
           <div key={r.id} className="stat stack-sm" style={{ gap: 4 }}>
             <span className="who">{r.name}</span>
             <span><b style={{ display: "inline", fontSize: "1.2rem" }}>{done} of {r.goal}</b> stories this week {won && <span className="ok-text">· earned ${r.reward}</span>}</span>
-            <span className="muted small">{gradeLabel(r.level)} stories · {r.baseline ? `check on ${fmtDate(r.baseline.date)}` : "reading check not done yet"}</span>
+            <span className="muted small">{r.baseline ? `${gradeLabel(r.level)} stories · check on ${fmtDate(r.baseline.date)}` : "Reading check not done yet"}</span>
           </div>
         );
       })}
@@ -177,8 +177,8 @@ function StatsRow({ reader, onRerunCheck }: { reader: Reader; onRerunCheck: () =
     <section className="stats">
       <div className="stat">
         <span className="label">Reading level</span>
-        <b>{gradeLabel(reader.level)}</b>
-        <span className="muted small">{reader.baseline ? `Check on ${new Date(reader.baseline.date).toLocaleDateString()}` : "Reading check not done yet"}</span>
+        <b style={reader.baseline ? undefined : { fontSize: "1.2rem" }}>{reader.baseline ? gradeLabel(reader.level) : "Not checked yet"}</b>
+        <span className="muted small">{reader.baseline ? `Check on ${new Date(reader.baseline.date).toLocaleDateString()}` : `She does the reading check when she next logs in. It starts with ${gradeLabel(reader.startLevel)} stories and moves up or down from there.`}</span>
         {reader.baseline && !confirm && <div><button className="link" type="button" onClick={() => setConfirm(true)}>Re-run reading check</button></div>}
         {confirm && (
           <div className="row" style={{ marginTop: 6 }}>

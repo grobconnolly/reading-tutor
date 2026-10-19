@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getSynth, pickVoice } from "@/lib/speech";
+import { getSynth, pickVoice, pitchFor } from "@/lib/speech";
 
 export interface SayOpts {
   /** Show the text in the bubble (default true). */
@@ -67,7 +67,7 @@ export function useCoach(): Coach {
       utterRef.current = u; // keep a reference so the browser doesn't drop the utterance mid-speech
       if (voiceRef.current) u.voice = voiceRef.current;
       u.rate = opts.rate ?? 0.95;
-      u.pitch = 1.05;
+      u.pitch = pitchFor(voiceRef.current);
       let done = false;
       const fin = () => { if (done) return; done = true; setSpeak(false); res(); };
       u.onend = fin;
