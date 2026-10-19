@@ -17,9 +17,11 @@ export function CoachBar({ coach }: { coach: Coach }) {
         <button className="mute" type="button" onClick={coach.toggleMute} title="Turn the coach's voice on or off">
           {coach.muted ? "Voice off" : "Voice on"}
         </button>
-        <Link href="/voice" className="mute" style={{ textAlign: "center", textDecoration: "none", fontSize: ".8rem", padding: ".4em .8em" }} title="Choose which voice Juno uses on this device">
-          Change voice
-        </Link>
+        {!coach.cloudVoice && (
+          <Link href="/voice" className="mute" style={{ textAlign: "center", textDecoration: "none", fontSize: ".8rem", padding: ".4em .8em" }} title="Choose which voice Juno uses on this device">
+            Change voice
+          </Link>
+        )}
       </div>
     </div>
   );

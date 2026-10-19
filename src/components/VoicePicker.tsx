@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { getSavedVoiceURI, getSynth, listVoices, pitchFor, saveVoiceURI, voiceLabel, voiceTier, type VoiceTier } from "@/lib/speech";
+import { cloudVoice } from "@/lib/ttsClient";
 
 const SAMPLE = "Hi! I'm Coach Juno. Let's read a story together. You've got this!";
 const TIER_LABEL: Record<VoiceTier, string> = { natural: "Most natural", good: "Good", basic: "Basic" };
@@ -15,7 +16,14 @@ export function VoicePicker() {
   const [msg, setMsg] = useState("");
   const [ready, setReady] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [cloud, setCloud] = useState(false);
   const utter = useRef<SpeechSynthesisUtterance | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    cloudVoice().then((cv) => { if (alive) setCloud(!!cv); });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     const synth = getSynth();
@@ -66,6 +74,13 @@ export function VoicePicker() {
         </div>
         <Link href="/"><button type="button">Back</button></Link>
       </div>
+
+      {cloud && (
+        <section className="card stack-sm">
+          <h3>Juno has her own voice now</h3>
+          <p className="muted small">Her voice comes from the internet and sounds the same on every device. The voices below are only used if it can&rsquo;t load.</p>
+        </section>
+      )}
 
       <section className="card stack-sm">
         <p>Tap <b>Try</b> to hear a voice, then tap <b>Use this one</b>. The choice is saved on this device.</p>
@@ -123,7 +138,7 @@ export function VoicePicker() {
           <li><b>Windows:</b> open this page in Microsoft Edge, which has natural voices like <b>Aria</b> and <b>Jenny</b> built in.</li>
           <li><b>Chrome:</b> on a Mac it can use the Mac voices above; <b>Google US English</b> is a good built-in choice.</li>
         </ul>
-        <p className="muted small">A later version gives Juno her own studio-quality voice that sounds the same on every device.</p>
+        {!cloud && <p className="muted small">A grown-up can also give Juno her own studio-quality voice that sounds the same on every device: see the Azure settings in the project&rsquo;s README.</p>}
       </section>
     </main>
   );
