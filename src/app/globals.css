@@ -50,7 +50,7 @@ button:disabled{opacity:.5;cursor:default}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:22px}
 input[type=text],input[type=password],input[type=number],textarea{width:100%;background:var(--bg);border:1.5px solid var(--line);
   border-radius:10px;padding:.7em .9em}
-.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field{display:flex;flex-direction:column;justify-content:flex-end;gap:6px;min-width:0} /* bottom-aligned so inputs line up when a neighbour's label wraps */
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
 .span-all{grid-column:1/-1}
 .err{color:var(--miss);font-weight:500}
