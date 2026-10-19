@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Stella's Reading Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Lexend:wght@400;500;600&display=swap">
+<style>
+/* Layout: one calm column; the passage is the hero, coach bar on top, controls under the text. */
+:root{
+  --bg:#EDF1F5; --surface:#FFFFFF; --ink:#18263A; --muted:#5B6B80; --line:#D5DDE7;
+  --accent:#E3892A; --accent-ink:#3E2300; --accent-soft:#FCEBD6;
+  --ok:#1E8556; --ok-bg:#DAF1E5; --miss:#C2432D; --miss-bg:#FADFD8;
+  --help:#7457BF; --help-bg:#EAE3F9; --cur:#FFE3A8; --money:#1E8556;
+  --display:"Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --read:"Lexend", "Verdana", system-ui, sans-serif;
+  --r:14px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F1621; --surface:#172131; --ink:#E7EDF5; --muted:#9AA8BA; --line:#2A394D;
+  --accent:#F0A24A; --accent-ink:#2A1600; --accent-soft:#3A2810;
+  --ok:#4CC58D; --ok-bg:#133427; --miss:#F2826D; --miss-bg:#3B1C17;
+  --help:#AA8EF0; --help-bg:#2A2145; --cur:#4C3C12; --money:#4CC58D; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F1621; --surface:#172131; --ink:#E7EDF5; --muted:#9AA8BA; --line:#2A394D;
+  --accent:#F0A24A; --accent-ink:#2A1600; --accent-soft:#3A2810;
+  --ok:#4CC58D; --ok-bg:#133427; --miss:#F2826D; --miss-bg:#3B1C17;
+  --help:#AA8EF0; --help-bg:#2A2145; --cur:#4C3C12; --money:#4CC58D; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--read);font-size:17px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:max(16px,env(safe-area-inset-top,0px)) 40px}
+.wrap{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:2rem;font-weight:800} h2{font-size:1.5rem;font-weight:800} h3{font-size:1.1rem;font-weight:600}
+p{margin:0}
+.muted{color:var(--muted)}
+.label{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;border-radius:999px;padding:.8em 1.4em;font-weight:600;background:var(--surface);
+  border:1.5px solid var(--line);transition:transform .08s}
+button:active{transform:scale(.97)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.big{font-size:1.15rem;padding:1em 1.8em}
+button.link{background:none;border:0;padding:.3em;text-decoration:underline;color:var(--muted)}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:22px}
+input[type=text],input[type=password],input[type=number],textarea{width:100%;background:var(--bg);border:1.5px solid var(--line);
+  border-radius:10px;padding:.7em .9em}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.err{color:var(--miss);font-weight:500}
+
+/* coach bar */
+.coach{display:flex;gap:14px;align-items:center;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+  background:var(--bg);padding-block:8px}
+.face{flex:none;width:58px;height:58px;border-radius:50%;background:var(--accent);position:relative;
+  box-shadow:0 0 0 0 var(--accent-soft)}
+.face::before,.face::after{content:"";position:absolute;top:22px;width:8px;height:11px;border-radius:5px;background:var(--accent-ink)}
+.face::before{left:17px}.face::after{right:17px}
+.face .mouth{position:absolute;left:21px;bottom:13px;width:16px;height:6px;border-radius:0 0 10px 10px;background:var(--accent-ink);transition:height .1s}
+.face.speaking .mouth{animation:talk .28s infinite alternate}
+@keyframes talk{to{height:11px}}
+.face.listening{box-shadow:0 0 0 6px var(--ok-bg),0 0 0 9px var(--ok)}
+.bubble{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:16px 16px 16px 4px;padding:12px 16px;font-size:1.05rem}
+.bubble .who{font-family:var(--display);font-weight:800;font-size:.85rem;color:var(--accent)}
+.mute{flex:none;padding:.5em .8em;font-size:.85rem}
+
+/* login */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.tile{border-radius:var(--r);padding:28px 20px;text-align:left;display:flex;flex-direction:column;gap:6px;background:var(--surface)}
+.tile .nm{font-family:var(--display);font-size:1.6rem;font-weight:800}
+.pin{font-size:2rem;letter-spacing:.5em;text-align:center;max-width:240px}
+
+/* home */
+.goal{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center}
+.bill{width:120px;height:64px;border-radius:8px;background:var(--ok-bg);border:2px dashed var(--money);display:grid;place-items:center;
+  font-family:var(--display);font-weight:800;font-size:1.8rem;color:var(--money)}
+.bill.won{border-style:solid;background:var(--money);color:var(--surface)}
+.dots{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.dot{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:.8rem;font-weight:600}
+.dot.on{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.stat b{display:block;font-family:var(--display);font-size:1.8rem;font-variant-numeric:tabular-nums}
+
+/* reading */
+.passage{font-size:clamp(1.35rem,3.6vw,1.75rem);line-height:2;word-spacing:.18em;letter-spacing:.01em}
+.w{padding:.05em .14em;border-radius:6px;transition:background .15s,color .15s}
+.w.ok{color:var(--ok)}
+.w.soft{color:var(--ok)}
+.w.skip{background:var(--miss-bg);color:var(--miss);text-decoration:underline wavy;text-underline-offset:6px}
+.w.help{background:var(--help-bg);color:var(--help)}
+.w.cur{background:var(--cur)}
+.w.model{background:var(--accent-soft)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:var(--sw)}
+.mic{display:inline-flex;align-items:center;gap:8px;font-weight:600;color:var(--ok)}
+.mic::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--ok);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+.progress{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.progress i{display:block;height:100%;background:var(--ok);width:0;transition:width .2s}
+
+/* word practice */
+.bigword{font-family:var(--read);font-size:clamp(2.6rem,10vw,4.5rem);font-weight:600;text-align:center;padding:24px 0;word-break:break-word}
+.result-pill{display:inline-block;padding:.3em .9em;border-radius:99px;font-weight:600}
+.result-pill.good{background:var(--ok-bg);color:var(--ok)}
+.result-pill.bad{background:var(--miss-bg);color:var(--miss)}
+
+/* quiz */
+.opts{display:grid;gap:10px}
+.opt{text-align:left;border-radius:12px;padding:1em 1.2em;font-size:1.1rem;font-weight:500}
+.opt.right{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
+.opt.wrong{background:var(--miss-bg);border-color:var(--miss);color:var(--miss)}
+
+/* results */
+.stars{font-size:2.6rem;letter-spacing:.15em;color:var(--accent)}
+.stars .off{color:var(--line)}
+
+/* parent */
+table{width:100%;border-collapse:collapse;font-size:.92rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.scroll{overflow-x:auto}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:var(--miss-bg);color:var(--miss);border-radius:99px;padding:.25em .8em;font-size:.9rem}
+.chip small{opacity:.7}
+.note{background:var(--accent-soft);border-radius:12px;padding:14px 16px}
+.spark{width:100%;height:120px;display:block}
+.banner{background:var(--miss-bg);color:var(--miss);border-radius:12px;padding:12px 16px;font-weight:500}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Coach bar (always visible after login) -->
+  <div class="coach" id="coachBar" hidden>
+    <div class="face" id="face" aria-hidden="true"><span class="mouth"></span></div>
+    <div class="bubble" aria-live="polite"><div class="who">Coach Juno</div><div id="bubbleText">Hi!</div></div>
+    <button class="mute" id="btnMute" type="button" title="Turn the coach's voice on or off">Voice on</button>
+  </div>
+
+  <!-- SETUP (first run) -->
+  <section class="screen" id="s-setup" hidden>
+    <div class="card" style="display:flex;flex-direction:column;gap:18px">
+      <div><p class="label">First-time setup</p><h1>Set up the reading coach</h1>
+        <p class="muted">Takes a minute. Only a parent should see this screen.</p></div>
+      <form id="setupForm" class="grid2" autocomplete="off">
+        <label class="field"><span class="label">Reader's name</span><input id="setName" type="text" value="Stella" required></label>
+        <label class="field"><span class="label">Reader's 4-digit PIN</span><input id="setKidPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required></label>
+        <label class="field"><span class="label">Parent 4-digit PIN</span><input id="setParentPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required></label>
+        <label class="field"><span class="label">Stories per week for the reward</span><input id="setGoal" type="number" min="1" max="14" value="5" required></label>
+        <label class="field"><span class="label">Weekly reward ($)</span><input id="setReward" type="number" min="1" max="100" value="5" required></label>
+        <label class="field"><span class="label">Her interests (for new stories)</span><input id="setInterests" type="text" placeholder="e.g. dogs, gymnastics, slime, mysteries"></label>
+        <div class="row" style="grid-column:1/-1"><button class="primary big" type="submit">Save and continue</button><span class="err" id="setupErr"></span></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- LOGIN -->
+  <section class="screen" id="s-login" hidden>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div><p class="label">Reading Coach</p><h1>Who's here?</h1></div>
+      <div class="tiles">
+        <button class="tile primary" id="tileKid" type="button"><span class="label" style="color:var(--accent-ink)">Reader</span><span class="nm" id="tileKidName">Stella</span><span>Tap to log in</span></button>
+        <button class="tile" id="tileParent" type="button"><span class="label">Grown-up</span><span class="nm">Parent</span><span class="muted">Progress and settings</span></button>
+      </div>
+      <form class="card" id="pinForm" hidden style="display:flex;flex-direction:column;gap:12px;align-items:flex-start">
+        <h3 id="pinWho">Enter your PIN</h3>
+        <input class="pin" id="pinInput" type="password" inputmode="numeric" maxlength="4" autocomplete="off" aria-label="PIN">
+        <div class="row"><button class="primary" type="submit">Log in</button><span class="err" id="pinErr"></span></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- HOME -->
+  <section class="screen" id="s-home" hidden>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="banner" id="srBanner" hidden></div>
+      <div class="card goal">
+        <div class="bill" id="bill">$5</div>
+        <div style="min-width:0">
+          <p class="label">This week's goal</p>
+          <h2 id="goalText">Read 5 stories to earn $5</h2>
+          <div class="dots" id="goalDots"></div>
+        </div>
+      </div>
+      <div class="row">
+        <button class="primary big" id="btnCheck" type="button">Start reading check</button>
+        <button class="primary big" id="btnPractice" type="button">Read a story</button>
+        <button class="big" id="btnTricky" type="button">Tricky words</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="label">Day streak</span><b id="stStreak">0</b></div>
+        <div class="stat"><span class="label">Stars</span><b id="stStars">0</b></div>
+        <div class="stat"><span class="label">Stories read</span><b id="stStories">0</b></div>
+      </div>
+      <div class="row"><button class="link" id="btnLogout" type="button">Log out</button></div>
+    </div>
+  </section>
+
+  <!-- READ -->
+  <section class="screen" id="s-read" hidden>
+    <div class="card" style="display:flex;flex-direction:column;gap:18px">
+      <div class="row" style="justify-content:space-between">
+        <div style="min-width:0"><p class="label" id="readKicker">Story</p><h2 id="readTitle">Title</h2></div>
+        <span id="micState"></span>
+      </div>
+      <div class="progress" aria-hidden="true"><i id="readBar"></i></div>
+      <div class="passage" id="passage"></div>
+      <div class="legend">
+        <span style="--sw:var(--ok)">Read it</span>
+        <span style="--sw:var(--help)">Coach helped</span>
+        <span style="--sw:var(--miss)">Skipped</span>
+      </div>
+      <div class="row">
+        <button class="primary big" id="btnStart" type="button">Start reading</button>
+        <button class="big" id="btnModel" type="button">Hear it first</button>
+        <button class="big" id="btnDone" type="button" hidden>I'm done</button>
+        <button class="link" id="btnRestart" type="button" hidden>Start over</button>
+        <button class="link" id="btnQuit" type="button">Back</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- WORD PRACTICE -->
+  <section class="screen" id="s-words" hidden>
+    <div class="card" style="display:flex;flex-direction:column;gap:14px">
+      <div class="row" style="justify-content:space-between"><p class="label" id="wordsKicker">Word practice</p><span id="wordMic"></span></div>
+      <div class="bigword" id="bigWord">word</div>
+      <div style="text-align:center;min-height:2em"><span id="wordResult"></span></div>
+      <div class="row" style="justify-content:center">
+        <button class="big" id="btnHearWord" type="button">Hear it</button>
+        <button class="primary big" id="btnSayWord" type="button">My turn</button>
+        <button class="link" id="btnNextWord" type="button">Next word</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUIZ -->
+  <section class="screen" id="s-quiz" hidden>
+    <div class="card" style="display:flex;flex-direction:column;gap:16px">
+      <p class="label" id="quizKicker">Question 1 of 3</p>
+      <h2 id="quizQ">Question</h2>
+      <div class="opts" id="quizOpts"></div>
+      <div class="row"><button class="link" id="btnRepeatQ" type="button">Read it to me again</button></div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section class="screen" id="s-results" hidden>
+    <div class="card" style="display:flex;flex-direction:column;gap:18px">
+      <p class="label" id="resKicker">Nice work</p>
+      <h2 id="resTitle">You finished!</h2>
+      <div class="stars" id="resStars"></div>
+      <div class="stats">
+        <div class="stat"><span class="label">Words per minute</span><b id="resWcpm">–</b></div>
+        <div class="stat"><span class="label">Words read right</span><b id="resAcc">–</b></div>
+        <div class="stat"><span class="label">Questions</span><b id="resComp">–</b></div>
+      </div>
+      <p id="resNote" class="note" hidden></p>
+      <div class="row">
+        <button class="primary big" id="btnResNext" type="button">Read another</button>
+        <button class="big" id="btnResHome" type="button">Home</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PARENT -->
+  <section class="screen" id="s-parent" hidden>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="row" style="justify-content:space-between"><div><p class="label">Parent view</p><h1 id="parentTitle">Stella's progress</h1></div>
+        <button id="btnParentOut" type="button">Log out</button></div>
+
+      <div class="card" id="rewardCard" style="display:flex;flex-direction:column;gap:10px"></div>
+
+      <div class="stats">
+        <div class="stat"><span class="label">Reading level</span><b id="pLevel">–</b><span class="muted" id="pLevelSub"></span></div>
+        <div class="stat"><span class="label">Latest words/min</span><b id="pWcpm">–</b><span class="muted">5th-grade fall avg ≈ 110</span></div>
+        <div class="stat"><span class="label">Accuracy (last 5)</span><b id="pAcc">–</b><span class="muted">Target 95%+</span></div>
+        <div class="stat"><span class="label">Day streak</span><b id="pStreak">0</b></div>
+      </div>
+
+      <div class="card"><h3>Words per minute over time</h3><div id="pSpark" style="margin-top:10px"></div></div>
+
+      <div class="card" style="display:flex;flex-direction:column;gap:10px"><h3>Words she's working on</h3><div class="chips" id="pWords"></div></div>
+
+      <div class="card"><h3>Sessions</h3><div class="scroll" style="margin-top:10px"><table id="pTable"></table></div></div>
+
+      <div class="card" style="display:flex;flex-direction:column;gap:14px">
+        <h3>Settings</h3>
+        <form id="settingsForm" class="grid2" autocomplete="off">
+          <label class="field"><span class="label">Stories per week</span><input id="cfgGoal" type="number" min="1" max="14"></label>
+          <label class="field"><span class="label">Weekly reward ($)</span><input id="cfgReward" type="number" min="1" max="100"></label>
+          <label class="field"><span class="label">Her interests</span><input id="cfgInterests" type="text"></label>
+          <label class="field"><span class="label">Reading level (1–7)</span><input id="cfgLevel" type="number" min="1" max="7"></label>
+          <label class="field" style="grid-column:1/-1"><span class="label">Anthropic API key (optional, for new stories and coach notes)</span>
+            <input id="cfgKey" type="password" placeholder="sk-ant-…"><span class="muted" style="font-size:.85rem">Stored only on this device. Temporary until the server version is set up.</span></label>
+          <div class="row" style="grid-column:1/-1"><button class="primary" type="submit">Save settings</button><span id="cfgSaved" class="muted"></span></div>
+        </form>
+        <div class="row"><button class="link" id="btnReset" type="button">Erase all progress on this device</button>
+          <span id="resetConfirm" hidden><b class="err">Erase everything?</b> <button id="btnResetYes" type="button">Yes, erase</button> <button class="link" id="btnResetNo" type="button">Cancel</button></span></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+"use strict";
+/* ================= PASSAGES (original, leveled) ================= */
+const LEVELS = {1:"Grade 1",2:"Grade 2",3:"Grade 2–3",4:"Grade 3",5:"Grade 3–4",6:"Grade 4",7:"Grade 5"};
+const LEVEL_WORDS = {1:60,2:80,3:100,4:120,5:130,6:140,7:150};
+const PASSAGES = [
+ {id:"1a",level:1,title:"The Big Dog",text:"Max is a big dog. He likes to run and jump. Max runs to the park with Sam. Sam has a red ball. He throws the ball up high. Max jumps and gets it! Then Max drops the ball in the mud. Now the ball is not red. It is brown. Sam laughs. Max wags his tail. It is time for a bath.",
+  questions:[{q:"What does Sam throw?",options:["A red ball","A stick","A hat","A bone"],a:0},{q:"Why is the ball brown?",options:["It fell in the mud","Sam painted it","It was old","Max chewed it"],a:0},{q:"How does Sam feel when the ball gets muddy?",options:["He thinks it is funny","He is sad","He is angry","He is scared"],a:0}]},
+ {id:"1b",level:1,title:"Fish at the Lake",text:"Mia and her dad go to the lake. They sit on a log and fish. Dad gets a little fish. Mia waits and waits. Then her line pulls hard! She holds on tight. It is a big fish! Dad helps her pull it in. Mia looks at the fish. Then she lets it go back in the lake. The fish swims away fast.",
+  questions:[{q:"Where do Mia and her dad go?",options:["To a lake","To a store","To the beach","To school"],a:0},{q:"Who helps Mia pull the fish in?",options:["Her dad","Her mom","Her friend","Nobody"],a:0},{q:"What does Mia do with the big fish?",options:["She lets it go","She eats it","She takes it home","She gives it to Dad"],a:0}]},
+ {id:"2a",level:2,title:"The Lost Lunch",text:"Leo opened his backpack at lunch, but his lunch box was not inside. His stomach growled. He looked under his desk and in his cubby. It was not there. Then he remembered. He had set it on the kitchen counter that morning while he tied his shoes. Leo felt grumpy. His friend Ava saw his sad face. She broke her sandwich in half and gave him the bigger piece. Leo smiled. \"Tomorrow I will share my cookies with you,\" he said.",
+  questions:[{q:"Where was Leo's lunch box?",options:["On the kitchen counter","Under his desk","In his cubby","On the bus"],a:0},{q:"What did Ava share with Leo?",options:["Half of her sandwich","Her cookies","Her apple","Her juice"],a:0},{q:"What does the word grumpy mean in the story?",options:["In a bad mood","Very sleepy","Very hungry","Excited"],a:0}]},
+ {id:"2b",level:2,title:"How Seeds Grow",text:"Plants grow from seeds. A seed is like a tiny box with a baby plant inside. The seed needs three things to start growing. It needs water, warm air, and soil. First, a root pushes down into the dirt. The root drinks water for the plant. Next, a small green shoot pokes up toward the sun. The shoot grows leaves. The leaves use sunlight to make food. In a few weeks, the tiny seed can become a tall plant.",
+  questions:[{q:"What grows first from the seed?",options:["The root","The leaves","A flower","The fruit"],a:0},{q:"What do the leaves use to make food?",options:["Sunlight","Rocks","Wind","Snow"],a:0},{q:"Which of these does a seed need to grow?",options:["Warm air","Loud music","Ice","Total darkness"],a:0}]},
+ {id:"3a",level:3,title:"The Rookie",text:"Carlos was the youngest player on his baseball team. He was small, but he was quick. During the big game, his team was losing by one run. It was the last inning, and Carlos was up to bat. His hands were shaking. The first pitch zoomed past him. Strike one! Carlos took a deep breath and remembered what his coach always said: \"Watch the ball all the way to the bat.\" The next pitch came, and Carlos swung. Crack! The ball flew over the second baseman's head. Carlos raced to first base while his teammate ran home. The game was tied, and his team cheered his name.",
+  questions:[{q:"Why were Carlos's hands shaking?",options:["He was nervous","He was cold","He was hurt","He was tired"],a:0},{q:"What did his coach always tell him?",options:["Watch the ball all the way to the bat","Swing as hard as you can","Run fast to first base","Never strike out"],a:0},{q:"What happened because of Carlos's hit?",options:["The game was tied","His team lost","The game was canceled","Carlos got hurt"],a:0}]},
+ {id:"3b",level:3,title:"Sea Turtles",text:"Sea turtles have lived in the ocean for millions of years. They spend almost their whole lives swimming in the sea. A mother turtle comes onto the beach only to lay her eggs. At night, she digs a deep hole in the sand with her flippers. She lays about one hundred eggs, covers them up, and returns to the water. After about two months, the baby turtles hatch. They dig their way out of the sand and race toward the ocean. Many dangers wait for them, like birds and crabs. Only a few babies grow up, but those that do can live for more than fifty years.",
+  questions:[{q:"Why does a mother sea turtle come onto the beach?",options:["To lay her eggs","To find food","To sleep","To get warm"],a:0},{q:"What do baby turtles do after they hatch?",options:["Race toward the ocean","Stay in the nest","Look for their mother","Climb trees"],a:0},{q:"In this story, what are dangers?",options:["Things that can hurt you","Kinds of food","Places to hide","Ocean waves"],a:0}]},
+ {id:"4a",level:4,title:"The Science Fair",text:"Nina wanted to win the science fair, but she could not think of a good idea. Her brother suggested a volcano, but everyone made volcanoes. One morning, Nina noticed that the bread on the counter had fuzzy green spots. \"That's mold,\" her mother explained. \"It grows faster in some places than others.\" Nina had her idea. She put three slices of bread in three different places: the refrigerator, a dark cabinet, and a sunny windowsill. Every day she checked them and wrote notes in her journal. After one week, the bread in the dark cabinet was the moldiest. The bread in the refrigerator barely changed. Nina did not win first place, but the judges said her project was the most original in the whole school.",
+  questions:[{q:"What gave Nina her idea?",options:["Moldy bread on the counter","Her brother's volcano","A library book","Her teacher"],a:0},{q:"Where did the bread change the least?",options:["In the refrigerator","In the dark cabinet","On the windowsill","In her backpack"],a:0},{q:"The judges said her project was original. What does original mean?",options:["New and different","Very old","Hard to understand","Too small"],a:0}]},
+ {id:"4b",level:4,title:"Animal Teamwork",text:"Some animals survive by working together. Wolves live and hunt in groups called packs. By working as a team, a pack can catch animals much bigger than a single wolf could. Honeybees also depend on teamwork. Inside a hive, thousands of bees share the work. Some bees gather nectar from flowers, some guard the entrance, and others take care of the young. Even tiny ants cooperate. When an ant finds food, it leaves a scent trail on the ground. Other ants follow the trail and help carry the food home. For these creatures, being part of a group is the key to staying alive.",
+  questions:[{q:"What is a group of wolves called?",options:["A pack","A hive","A herd","A team"],a:0},{q:"How does an ant show other ants where food is?",options:["It leaves a scent trail","It makes a loud noise","It draws a map","It flies back"],a:0},{q:"What is this passage mostly about?",options:["Animals working together to survive","How wolves hunt alone","Why bees make honey","How to keep ants away"],a:0}]},
+ {id:"5a",level:5,title:"The Storm",text:"The wind had been rising all afternoon, and by dinnertime the sky over the farm had turned a strange greenish gray. Grandpa kept glancing out the window. \"Jada, help me bring the goats into the barn,\" he said, grabbing his raincoat. Outside, the first heavy raindrops smacked against Jada's face. The goats were nervous and kept running in circles, but Jada remembered a trick. She shook a bucket of grain, and the goats followed the familiar sound straight through the barn doors. Just as Grandpa latched the doors, a crack of thunder shook the ground. Back in the farmhouse, they watched the storm through the window, dripping wet but relieved. \"You saved us a lot of trouble tonight,\" Grandpa told her proudly.",
+  questions:[{q:"How did Jada get the goats into the barn?",options:["She shook a bucket of grain","She chased them","She called their names","Grandpa carried them"],a:0},{q:"Why did Grandpa keep glancing out the window?",options:["He was worried about the storm","He was waiting for a visitor","He saw a fox","He wanted to go outside and play"],a:0},{q:"How did Jada and Grandpa feel at the end?",options:["Relieved","Angry","Bored","Lost"],a:0}]},
+ {id:"5b",level:5,title:"Inside a Volcano",text:"Deep beneath Earth's surface, the rock is so hot that some of it melts into a thick liquid called magma. Magma is lighter than the solid rock around it, so it slowly rises. Sometimes it collects in a chamber underneath a mountain. When enough pressure builds up, the magma bursts through cracks in the surface. Once magma reaches the outside, scientists call it lava. Lava can be hotter than two thousand degrees and glows orange and red as it flows. Over many eruptions, layers of cooled lava and ash pile up and build the volcano taller. Scientists who study volcanoes are called volcanologists, and they watch for warning signs like small earthquakes so that people can leave before an eruption.",
+  questions:[{q:"What is magma called once it reaches the surface?",options:["Lava","Ash","Crystal","Steam"],a:0},{q:"Why does magma rise?",options:["It is lighter than the rock around it","The wind pulls it up","Volcanologists pump it","It is colder than the rock"],a:0},{q:"Why do volcanologists watch for small earthquakes?",options:["So people can leave before an eruption","To make the volcano bigger","To find gold","To stop the lava"],a:0}]},
+ {id:"6a",level:6,title:"The Comeback",text:"Ever since she fell during the regional gymnastics meet, Priya had avoided the balance beam. Every time she climbed onto it, her legs trembled and her mind replayed the moment she slipped. Her coach, Ms. Okafor, noticed and suggested a different approach. \"Let's start on the floor,\" she said, placing a strip of tape on the mat. For a week, Priya practiced her routine on that narrow line of tape, where falling was impossible. Gradually, her movements became smooth and confident again. Next, they moved to a low beam only a few inches off the ground. By the end of the month, Priya was back on the competition beam, performing her routine without a single wobble. She realized that conquering fear did not happen all at once; it happened one small step at a time.",
+  questions:[{q:"Why had Priya been avoiding the balance beam?",options:["She fell at a meet and was afraid","She hurt her arm","She did not like her coach","The beam was broken"],a:0},{q:"Why did Ms. Okafor have Priya practice on tape first?",options:["She could not fall, so she could build confidence","The gym was closed","Tape is harder than a beam","Priya asked to quit"],a:0},{q:"What lesson does Priya learn?",options:["Fear can be beaten one small step at a time","Gymnastics is too dangerous","Coaches are always right","Practice is a waste of time"],a:0}]},
+ {id:"6b",level:6,title:"Glowing Waves",text:"On certain nights, the waves along some beaches glow an eerie electric blue. This dazzling light is not caused by pollution or magic. It comes from billions of tiny living things called dinoflagellates. These creatures are a kind of plankton, too small to see without a microscope. When the water around them is disturbed, a chemical reaction inside their bodies produces light. This ability is called bioluminescence. Scientists believe the glow may protect the plankton. A sudden flash can startle a predator, or it can attract even larger animals that hunt the predator. Many other organisms use bioluminescence too, including fireflies, certain mushrooms, and fish that live in the deepest parts of the ocean, where sunlight never reaches.",
+  questions:[{q:"What makes the waves glow?",options:["Billions of tiny plankton","Pollution","The moon","Lights on the beach"],a:0},{q:"What makes the plankton light up?",options:["The water around them is disturbed","The sun goes down","They get hungry","They get cold"],a:0},{q:"How might glowing protect the plankton?",options:["A flash can startle a predator","It keeps them warm","It helps them swim faster","It makes them taste bad"],a:0}]},
+ {id:"7a",level:7,title:"The Inventor's Notebook",text:"When twelve-year-old Theo discovered his great-grandmother's notebook in the attic, he expected recipes or old shopping lists. Instead, the yellowed pages were crowded with sketches of strange machines, each labeled in tiny, precise handwriting. One drawing showed a device for collecting rainwater from rooftops and filtering it for drinking. Another described a bicycle that could power a lamp as the rider pedaled. Theo was astonished. Nobody in his family had ever mentioned that she was an inventor. He brought the notebook to his science teacher, who helped him research the designs. They discovered that his great-grandmother had applied for a patent in the nineteen-forties but had been rejected without explanation. Determined to honor her work, Theo built a working model of the bicycle lamp for the regional science competition, and he proudly displayed her original sketches beside it.",
+  questions:[{q:"What did Theo expect to find in the notebook?",options:["Recipes or shopping lists","Drawings of machines","Old photos","A treasure map"],a:0},{q:"What happened when his great-grandmother applied for a patent?",options:["She was rejected","She became famous","She sold her invention","She never finished it"],a:0},{q:"Why did Theo display her sketches next to his model?",options:["To honor her and give her credit","Because his teacher made him","To win money","Because he lost his own drawings"],a:0}]},
+ {id:"7b",level:7,title:"The Monarch Mystery",text:"Every autumn, millions of monarch butterflies begin one of the most remarkable journeys in the animal kingdom. Monarchs from Canada and the northern United States fly as far as three thousand miles south to the mountain forests of central Mexico. What makes this migration so mysterious is that no single butterfly ever completes the round trip. The monarchs that fly south are the great-grandchildren of the butterflies that left Mexico the previous spring. Somehow, they find the same forests their ancestors visited, even though they have never been there before. Scientists believe monarchs use the position of the sun and possibly Earth's magnetic field to navigate. Unfortunately, monarch populations have declined because of habitat loss, so many communities now plant milkweed, the only plant monarch caterpillars can eat.",
+  questions:[{q:"Where do monarchs fly in the autumn?",options:["The forests of central Mexico","Canada","The Arctic","South America"],a:0},{q:"Why is the monarch migration a mystery?",options:["They find forests they have never visited","They fly backwards","They only fly at night","Nobody has seen them fly"],a:0},{q:"Why do communities plant milkweed?",options:["It is the only food monarch caterpillars eat","It smells nice","It keeps birds away","It grows fast"],a:0}]}
+];
+
+/* ================= STORAGE ================= */
+const KEY = "stella-reading-coach.v1";
+function blankState(){return {child:null,parentPin:null,goal:5,reward:5,level:3,apiKey:"",baseline:null,sessions:[],trouble:{},paidWeeks:{},aiPassages:[],stars:0};}
+let S = load();
+function load(){try{const raw=localStorage.getItem(KEY);return raw?Object.assign(blankState(),JSON.parse(raw)):blankState();}catch(e){return blankState();}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+
+/* ================= HELPERS ================= */
+const $ = id => document.getElementById(id);
+const SCREENS = ["s-setup","s-login","s-home","s-read","s-words","s-quiz","s-results","s-parent"];
+function show(id){SCREENS.forEach(s=>$(s).hidden=(s!==id));$("coachBar").hidden=!["s-home","s-read","s-words","s-quiz","s-results"].includes(id);window.scrollTo(0,0);}
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));}
+function weekKey(d=new Date()){const x=new Date(d);const day=(x.getDay()+6)%7;x.setHours(0,0,0,0);x.setDate(x.getDate()-day);return x.toISOString().slice(0,10);} // Monday
+function dayKey(d=new Date()){const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");}
+function countedThisWeek(){const wk=weekKey();return S.sessions.filter(s=>s.counts&&weekKey(new Date(s.date))===wk).length;}
+function streak(){const days=new Set(S.sessions.map(s=>dayKey(new Date(s.date))));let n=0;const d=new Date();if(!days.has(dayKey(d)))d.setDate(d.getDate()-1);while(days.has(dayKey(d))){n++;d.setDate(d.getDate()-1);}return n;}
+
+/* ================= WORD MATCHING ================= */
+const SMALL = new Set(["a","an","the","of","to","and","in","is","it","on","at","as","or","for","was","his","her","he","she","i","we","by"]);
+const NUM = {"0":"zero","1":"one","2":"two","3":"three","4":"four","5":"five","6":"six","7":"seven","8":"eight","9":"nine","10":"ten","100":"hundred"};
+const SAME = {"two":["to","too"],"to":["two","too"],"too":["to","two"],"there":["their","they're"],"their":["there","they're"],"know":["no"],"no":["know"],"right":["write"],"one":["won"],"won":["one"],"four":["for"],"for":["four"],"its":["it's"],"hole":["whole"],"whole":["hole"],"sea":["see"],"see":["sea"],"tail":["tale"],"eight":["ate"],"hour":["our"],"our":["hour"],"flour":["flower"],"flower":["flour"],"mr":["mister"],"ms":["miss","mizz"]};
+function norm(w){return String(w).toLowerCase().replace(/[’']/g,"").replace(/[^a-z0-9]/g,"");}
+function lev(a,b){if(a===b)return 0;const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let prev=Array.from({length:n+1},(_,i)=>i);for(let i=1;i<=m;i++){const cur=[i];for(let j=1;j<=n;j++){cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));}prev=cur;}return prev[n];}
+function wordMatch(heard,target){
+  let h=norm(heard),t=norm(target); if(!h||!t)return false;
+  if(NUM[h])h=NUM[h];
+  if(h===t)return true;
+  if((SAME[t]||[]).map(norm).includes(h))return true;
+  if(t.length>=5 && lev(h,t)<=1)return true;
+  if(t.length>=8 && lev(h,t)<=2)return true;
+  if(t.length>=4 && (h===t+"s"||t===h+"s"))return true;
+  return false;
+}
+function tokenize(text){return String(text).split(/[\s\-–—]+/).map(norm).filter(Boolean);}
+// Advance reading pointer with one heard token. Look ahead up to 4 words; skipped small words count as read (recognizers drop them).
+function advance(st,tok){
+  const n=st.words.length; const end=Math.min(st.p+4,n-1);
+  for(let j=st.p;j<=end;j++){
+    if(wordMatch(tok,st.words[j].norm)){
+      for(let k=st.p;k<j;k++){ if(st.status[k]==="todo") st.status[k]=SMALL.has(st.words[k].norm)?"soft":"skip"; }
+      st.status[j]="ok"; st.p=j+1; return true;
+    }
+  }
+  return false;
+}
+
+/* ================= VOICE (speak) ================= */
+const synth = window.speechSynthesis || null;
+let voice=null, muted=false, speaking=false;
+function pickVoice(){ if(!synth)return; const vs=synth.getVoices(); const pref=["Samantha","Google US English","Microsoft Aria","Microsoft Jenny","Ava","Allison","Karen","Moira","Zoe"];
+  for(const p of pref){const v=vs.find(v=>v.name.includes(p)&&/^en/i.test(v.lang));if(v){voice=v;return;}}
+  voice=vs.find(v=>/^en-US/i.test(v.lang))||vs.find(v=>/^en/i.test(v.lang))||null;}
+if(synth){pickVoice();synth.onvoiceschanged=pickVoice;}
+function setSpeaking(on){speaking=on;$("face").classList.toggle("speaking",on);}
+function bubble(t){$("bubbleText").textContent=t;}
+function say(text,opts={}){
+  if(opts.show!==false)bubble(opts.caption||text);
+  return new Promise(res=>{
+    if(!synth||muted){res();return;}
+    synth.cancel(); const u=new SpeechSynthesisUtterance(text); if(voice)u.voice=voice;
+    u.rate=opts.rate||0.95; u.pitch=1.05; let done=false;
+    const fin=()=>{if(done)return;done=true;setSpeaking(false);res();};
+    u.onend=fin; u.onerror=fin; if(opts.onboundary)u.onboundary=opts.onboundary;
+    setSpeaking(true); synth.speak(u);
+    setTimeout(fin, 2000 + text.length*95/(u.rate));
+  });
+}
+$("btnMute").onclick=()=>{muted=!muted;$("btnMute").textContent=muted?"Voice off":"Voice on";if(muted&&synth)synth.cancel();setSpeaking(false);};
+
+/* ================= LISTEN (speech recognition) ================= */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+function micOn(on,el){$("face").classList.toggle("listening",on); if(el) el.innerHTML = on?'<span class="mic">Listening</span>':"";}
+function listenOnce(ms=7000){
+  return new Promise(res=>{
+    if(!SR){res([]);return;}
+    const r=new SR(); r.lang="en-US"; r.continuous=false; r.interimResults=false; r.maxAlternatives=5;
+    const got=[]; let fin=false;
+    r.onresult=e=>{for(const alt of e.results[0])got.push(alt.transcript);};
+    r.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed")micBlocked();};
+    r.onend=()=>{if(fin)return;fin=true;res(got);};
+    try{r.start();}catch(e){res([]);return;}
+    setTimeout(()=>{try{r.stop();}catch(e){}},ms);
+  });
+}
+function micBlocked(){bubble("I can't hear you. Ask a grown-up to allow the microphone for this page, then try again.");}
+
+/* ================= SESSION FLOW ================= */
+let R=null;        // current reading state
+let FLOW=null;     // {mode:'check'|'practice', passage, result, check:{tested:{},count}}
+let rec=null, recGen=0, ticker=null;
+
+function pickPassage(level){
+  const pool=PASSAGES.concat(S.aiPassages).filter(p=>p.level===level);
+  const counts={}; S.sessions.forEach(s=>{counts[s.passageId]=(counts[s.passageId]||0)+1;});
+  pool.sort((a,b)=>(counts[a.id]||0)-(counts[b.id]||0)||Math.random()-.5);
+  return {p:pool[0], timesRead:counts[pool[0].id]||0};
+}
+
+async function startPractice(){
+  let {p,timesRead}=pickPassage(S.level);
+  if(timesRead>=2 && S.apiKey){
+    bubble("Writing you a brand new story…");
+    try{p=await aiPassage(S.level);}catch(e){bubble("I couldn't write a new story right now, so let's read a favorite again.");await sleep(1500);}
+  }
+  FLOW={mode:"practice",passage:p};
+  openReading(p, timesRead>=1?"Read it again. Rereading makes you faster.":"");
+}
+function startCheck(){
+  FLOW={mode:"check",check:{tested:{},count:0,ids:[]}};
+  nextCheckPassage(3, true);
+}
+function nextCheckPassage(level, first){
+  const p=PASSAGES.find(x=>x.level===level && x.id.endsWith("a"));
+  FLOW.passage=p; FLOW.check.current=level;
+  openReading(p, first?"This is a reading check. Read this story out loud, the best you can. If you get stuck on a word, I'll help.":"Here's the next story.");
+}
+
+function openReading(p, intro){
+  const words=p.text.split(/\s+/).filter(Boolean).map(d=>({disp:d,norm:norm(d)})).filter(w=>w.norm);
+  R={passage:p,words,status:words.map(()=>"todo"),p:0,startT:null,endT:null,lastProg:0,active:false,paused:false,nudged:false,openedAt:0,helps:[]};
+  $("readKicker").textContent = FLOW.mode==="check" ? `Reading check · story ${FLOW.check.count+1}` : "Read out loud";
+  $("readTitle").textContent=p.title;
+  $("btnStart").hidden=false; $("btnModel").hidden=(FLOW.mode==="check"); $("btnDone").hidden=true; $("btnRestart").hidden=true;
+  renderPassage(); show("s-read");
+  say(intro || "Tap start reading, then read the story out loud. If you get stuck, I'll help.");
+}
+function renderPassage(preview){
+  const st=preview||R; const box=$("passage");
+  if(!box.children.length||box.children.length!==R.words.length){
+    box.innerHTML=R.words.map((w,i)=>`<span class="w" data-i="${i}">${esc(w.disp)}</span>`).join(" ");
+  }
+  const spans=box.children;
+  for(let i=0;i<spans.length;i++){
+    let c="w"; const s=st.status[i];
+    if(s!=="todo")c+=" "+s; else if(R.active && i===st.p)c+=" cur";
+    if(spans[i].className!==c)spans[i].className=c;
+  }
+  $("readBar").style.width=Math.round(100*st.p/R.words.length)+"%";
+}
+
+$("btnModel").onclick=async()=>{
+  if(!R||R.active)return;
+  const text=R.words.map(w=>w.disp).join(" ");
+  const starts=[];let pos=0;R.words.forEach(w=>{starts.push(pos);pos+=w.disp.length+1;});
+  const spans=$("passage").children; let last=-1;
+  await say(text,{rate:0.85,caption:"Listen and follow along with your eyes.",onboundary:e=>{
+    if(e.name&&e.name!=="word")return; let i=starts.findIndex((s,k)=>e.charIndex>=s&&(k===starts.length-1||e.charIndex<starts[k+1]));
+    if(last>=0&&spans[last])spans[last].classList.remove("model"); if(i>=0&&spans[i]){spans[i].classList.add("model");last=i;}
+  }});
+  if(last>=0&&spans[last])spans[last].classList.remove("model");
+  bubble("Your turn! Tap start reading when you're ready.");
+};
+
+$("btnStart").onclick=async()=>{
+  if(!SR){bubble("Listening needs Chrome, Edge, or Safari. Ask a grown-up to open this page in one of those.");return;}
+  if(synth)synth.cancel(); setSpeaking(false);
+  $("btnStart").hidden=true; $("btnModel").hidden=true; $("btnDone").hidden=false; $("btnRestart").hidden=false;
+  R.active=true; R.openedAt=Date.now(); R.lastProg=Date.now();
+  bubble("I'm listening. Start with the first word."); renderPassage();
+  startRec();
+  clearInterval(ticker); ticker=setInterval(tick,400);
+};
+$("btnDone").onclick=()=>finishReading();
+$("btnRestart").onclick=()=>{stopRec();clearInterval(ticker);openReading(R.passage,"Let's start over. Take your time.");};
+$("btnQuit").onclick=()=>{stopRec();clearInterval(ticker);if(R)R.active=false;goHome();};
+
+function startRec(){
+  const my=++recGen; rec=new SR(); rec.lang="en-US"; rec.continuous=true; rec.interimResults=true; rec.maxAlternatives=1;
+  rec.onresult=e=>{
+    if(my!==recGen||!R||!R.active||R.paused)return;
+    let interim="";
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      if(r.isFinal){const before=R.p; tokenize(r[0].transcript).forEach(t=>advance(R,t)); if(R.p!==before){const now=Date.now();R.lastProg=now;R.endT=now;if(!R.startT)R.startT=R.openedAt+Math.min(1500,now-R.openedAt);} }
+      else interim+=r[0].transcript+" ";
+    }
+    if(interim){const pv={words:R.words,status:R.status.slice(),p:R.p}; tokenize(interim).forEach(t=>advance(pv,t)); renderPassage(pv);} else renderPassage();
+    if(R.p>=R.words.length)finishReading();
+  };
+  rec.onerror=e=>{if(my!==recGen)return; if(e.error==="not-allowed"||e.error==="service-not-allowed"){micBlocked();R.active=false;stopRec();$("btnStart").hidden=false;$("btnDone").hidden=true;}};
+  rec.onend=()=>{if(my!==recGen)return; if(R&&R.active&&!R.paused){try{startRec();}catch(e){}}};
+  try{rec.start(); micOn(true,$("micState"));}catch(e){}
+}
+function stopRec(){recGen++; try{rec&&rec.abort();}catch(e){} rec=null; micOn(false,$("micState"));}
+
+async function tick(){
+  if(!R||!R.active||R.paused||speaking)return;
+  const now=Date.now();
+  if(!R.startT){ if(!R.nudged && now-R.openedAt>10000){R.nudged=true;R.paused=true;stopRec();await say("Go ahead and read out loud. Start with the first word: "+R.words[0].disp.replace(/[^\w']/g,"")+".");R.paused=false;R.lastProg=Date.now();if(R.active)startRec();} return; }
+  if(now-R.lastProg>5500 && R.p<R.words.length) await helpWord();
+}
+async function helpWord(){
+  R.paused=true; stopRec();
+  const i=R.p, w=R.words[i].disp.replace(/^[^\w']+|[^\w']+$/g,"");
+  R.status[i]="help"; R.helps.push(w); R.p++; renderPassage();
+  await say(`That word is ${w}.`,{rate:0.8});
+  R.lastProg=Date.now(); R.paused=false;
+  if(R.p>=R.words.length){finishReading();return;}
+  if(R.active)startRec();
+}
+
+function finishReading(){
+  if(!R||!R.active)return;
+  R.active=false; stopRec(); clearInterval(ticker); renderPassage();
+  const n=R.words.length, attempted=Math.max(R.p,1);
+  let ok=0; const missed=[];
+  for(let i=0;i<R.p;i++){const s=R.status[i]; if(s==="ok"||s==="soft")ok++; else if(s==="skip"||s==="help")missed.push(R.words[i].disp.replace(/^[^\w']+|[^\w']+$/g,"").toLowerCase());}
+  const secs = R.startT&&R.endT ? (R.endT-R.startT)/1000 : 0;
+  const wcpm = secs>=8 ? Math.round(ok/(secs/60)) : null;
+  const uniqMissed=[...new Set(missed)].filter(w=>w.length>2);
+  FLOW.result={ok,attempted,total:n,acc:ok/attempted,wcpm,missed:uniqMissed,helps:R.helps.length,finishedPct:R.p/n};
+  uniqMissed.forEach(w=>{const t=S.trouble[w]||(S.trouble[w]={miss:0,win:0});t.miss++;}); save();
+  afterReading();
+}
+async function afterReading(){
+  const r=FLOW.result;
+  if(r.finishedPct<0.5){await say("Let's keep going next time. Every page counts!");return goHome();}
+  await say(r.acc>=0.95?"Wow, that was smooth reading!":r.acc>=0.9?"Nice reading! You worked hard on that.":"Good effort. That one had some tricky words.");
+  if(FLOW.mode!=="check" && r.missed.length){ await runWordPractice(r.missed.slice(0,5),"Let's practice a few words from the story."); }
+  runQuiz();
+}
+
+/* ---------- word practice ---------- */
+let WP=null;
+function runWordPractice(list,intro){
+  return new Promise(resolve=>{ WP={list,i:0,tries:0,resolve,wins:0}; show("s-words"); say(intro).then(()=>wpShow()); });
+}
+async function wpShow(){
+  if(WP.i>=WP.list.length){const r=WP.resolve;const wins=WP.wins;WP=null;r(wins);return;}
+  const w=WP.list[WP.i]; WP.tries=0;
+  $("wordsKicker").textContent=`Word ${WP.i+1} of ${WP.list.length}`; $("bigWord").textContent=w; $("wordResult").innerHTML="";
+  await say(`This word is ${w}.`,{caption:`This word is "${w}".`}); await say(w,{rate:0.55,show:false});
+  wpListen();
+}
+async function wpListen(){
+  if(!WP)return;
+  if(!SR){bubble("Say it out loud, then tap next word.");return;}
+  const w=WP.list[WP.i];
+  bubble("Your turn. Say it!"); micOn(true,$("wordMic"));
+  const alts=await listenOnce(6000); micOn(false,$("wordMic"));
+  if(!WP)return;
+  const hit=alts.some(a=>tokenize(a).some(t=>wordMatch(t,w)));
+  const tr=S.trouble[w]||(S.trouble[w]={miss:0,win:0});
+  if(hit){tr.win++;save();WP.wins++;$("wordResult").innerHTML='<span class="result-pill good">Got it!</span>';await say(["Yes! Perfect.","You got it!","Nice job!"][WP.i%3]);WP.i++;wpShow();}
+  else if(WP.tries===0){WP.tries++;$("wordResult").innerHTML='<span class="result-pill bad">Almost</span>';await say(`Listen again. ${w}.`,{rate:0.7});wpListen();}
+  else {$("wordResult").innerHTML='<span class="result-pill bad">We\'ll practice it later</span>';await say("That's a tricky one. We'll come back to it.");WP.i++;wpShow();}
+}
+$("btnHearWord").onclick=()=>{if(WP)say(WP.list[WP.i],{rate:0.55});};
+$("btnSayWord").onclick=()=>wpListen();
+$("btnNextWord").onclick=()=>{if(WP){WP.i++;wpShow();}};
+
+async function startTricky(){
+  const list=Object.entries(S.trouble).filter(([w,t])=>t.miss>t.win).sort((a,b)=>(b[1].miss-b[1].win)-(a[1].miss-a[1].win)).slice(0,8).map(([w])=>w);
+  if(!list.length){bubble("No tricky words yet. Read a story and I'll save the hard ones here.");say("No tricky words yet. Read a story and I'll save the hard ones here.");return;}
+  FLOW={mode:"tricky"};
+  const wins=await runWordPractice(list,"Let's practice your tricky words.");
+  await say(`You got ${wins} out of ${list.length}. Great practice!`); goHome();
+}
+
+/* ---------- quiz ---------- */
+let QZ=null;
+function runQuiz(){
+  const qs=FLOW.passage.questions.map(q=>{const order=shuffle(q.options.map((t,i)=>({t,right:i===q.a})));return {q:q.q,opts:order};});
+  QZ={qs,i:0,right:0}; show("s-quiz"); qzShow(true);
+}
+async function qzShow(first){
+  const q=QZ.qs[QZ.i];
+  $("quizKicker").textContent=`Question ${QZ.i+1} of ${QZ.qs.length}`; $("quizQ").textContent=q.q;
+  const box=$("quizOpts"); box.innerHTML="";
+  q.opts.forEach((o,k)=>{const b=document.createElement("button");b.type="button";b.className="opt";b.textContent=o.t;b.onclick=()=>qzAnswer(k,b);box.appendChild(b);});
+  if(first)await say("Now some questions about the story. Tap your answer.");
+  qzRead();
+}
+function qzRead(){const q=QZ.qs[QZ.i];say(q.q+" "+q.opts.map(o=>o.t).join(". Or, ")+"?",{caption:q.q,rate:0.92});}
+$("btnRepeatQ").onclick=()=>{if(QZ)qzRead();};
+async function qzAnswer(k,btn){
+  const q=QZ.qs[QZ.i]; [...$("quizOpts").children].forEach(b=>b.disabled=true);
+  const right=q.opts[k].right;
+  if(right){QZ.right++;btn.classList.add("right");await say("That's right!");}
+  else{btn.classList.add("wrong");const ri=q.opts.findIndex(o=>o.right);$("quizOpts").children[ri].classList.add("right");await say("Good try. The answer is: "+q.opts[ri].t+".");}
+  QZ.i++; if(QZ.i<QZ.qs.length){await sleep(500);qzShow(false);} else finishSession();
+}
+
+/* ---------- results + leveling ---------- */
+async function finishSession(){
+  const r=FLOW.result, comp=QZ.right, compTotal=QZ.qs.length;
+  const counts = r.finishedPct>=0.8;
+  const before=countedThisWeek();
+  const stars=1+(r.acc>=0.93?1:0)+(comp===compTotal?1:0);
+  const sess={date:new Date().toISOString(),mode:FLOW.mode,passageId:FLOW.passage.id,title:FLOW.passage.title,level:FLOW.passage.level,
+    wcpm:r.wcpm,acc:Math.round(r.acc*100),comp,compTotal,missed:r.missed,helps:r.helps,counts,stars};
+  S.sessions.push(sess); S.stars+=stars;
+  let levelMsg="";
+  if(FLOW.mode==="practice"){
+    if(r.acc>=0.97&&comp===compTotal&&S.level<7){S.level++;levelMsg="up";}
+    else if((r.acc<0.88||comp<=1)&&S.level>1){S.level--;levelMsg="down";}
+  }
+  save();
+  // check mode routing
+  if(FLOW.mode==="check"){
+    const ck=FLOW.check; ck.count++; const L=ck.current; const pass=r.acc>=0.93&&comp>=2; ck.tested[L]=pass; ck.ids.push(FLOW.passage.id);
+    let next=null;
+    if(pass && L<7 && ck.tested[L+1]===undefined) next=L+1;
+    if(!pass && L>1 && ck.tested[L-1]===undefined) next=L-1;
+    if(next && ck.count<5){ show("s-results"); fillResults(sess,"Reading check","Story "+ck.count+" done!",false);
+      $("btnResNext").textContent="Next story"; $("btnResNext").onclick=()=>nextCheckPassage(next,false);
+      await say("Great job. Let's try one more story."); return; }
+    const passed=Object.keys(ck.tested).filter(k=>ck.tested[k]).map(Number);
+    const lvl=passed.length?Math.max(...passed):1;
+    S.level=lvl; S.baseline={date:new Date().toISOString(),level:lvl,wcpm:sess.wcpm,ids:ck.ids}; save();
+    show("s-results"); fillResults(sess,"Reading check done","You finished the reading check!",true);
+    $("btnResNext").textContent="Read a story"; $("btnResNext").onclick=startPractice;
+    await say("You finished the reading check! Now I know which stories are just right for you.");
+    goalCheck(before); return;
+  }
+  show("s-results"); fillResults(sess,"Nice work",["You finished the story!","Story complete!","Way to go!"][S.sessions.length%3],true);
+  $("btnResNext").textContent="Read another"; $("btnResNext").onclick=startPractice;
+  let line=stars===3?"Three stars! Amazing.":stars===2?"Two stars! Great job.":"You earned a star for finishing.";
+  if(levelMsg==="up")line+=" You're ready for harder stories. Level up!";
+  await say(line);
+  if(!counts) bubble("Read at least most of the story for it to count toward your goal.");
+  await goalCheck(before);
+  aiCoachNote(sess);
+}
+function fillResults(sess,kicker,title,showNext){
+  $("resKicker").textContent=kicker; $("resTitle").textContent=title;
+  $("resStars").innerHTML=[1,2,3].map(i=>`<span class="${i<=sess.stars?"":"off"}">★</span>`).join("");
+  $("resWcpm").textContent=sess.wcpm??"–"; $("resAcc").textContent=sess.acc+"%"; $("resComp").textContent=`${sess.comp}/${sess.compTotal}`;
+  $("resNote").hidden=true;
+}
+async function goalCheck(before){
+  const after=countedThisWeek();
+  if(before<S.goal && after>=S.goal){ await say(`You hit your weekly goal! You earned ${S.reward} dollars!`); }
+  else if(after<S.goal && after>before){ const left=S.goal-after; await say(`${left} more ${left===1?"story":"stories"} this week to earn ${S.reward} dollars.`); }
+}
+$("btnResHome").onclick=()=>goHome();
+
+/* ================= OPTIONAL AI (Anthropic) ================= */
+async function claude(prompt,maxTokens){
+  const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-5-5",max_tokens:maxTokens,messages:[{role:"user",content:prompt}]})});
+  if(!res.ok)throw new Error("API "+res.status);
+  const j=await res.json(); return j.content.map(c=>c.text||"").join("");
+}
+async function aiPassage(level){
+  const grade=LEVELS[level], words=LEVEL_WORDS[level], interests=(S.child&&S.child.interests)||"animals, sports, science, mysteries";
+  const txt=await claude(`Write an original reading passage for a 10-11 year old girl who reads at about a ${grade} level. Base the topic on one of her interests: ${interests}. Length: about ${words} words. Use vocabulary and sentence length right for ${grade}, but make the subject feel grown-up enough that a 5th grader won't think it's babyish. Write every number as words, never digits. Then write 3 multiple-choice comprehension questions (two about facts in the passage, one about a word meaning or an inference), each with 4 short options, correct option FIRST.
+Return only JSON, no other text: {"title":"...","text":"...","questions":[{"q":"...","options":["correct","wrong","wrong","wrong"]}]}`,1500);
+  const j=JSON.parse(txt.slice(txt.indexOf("{"),txt.lastIndexOf("}")+1));
+  const p={id:"ai-"+Date.now(),level,title:j.title,text:j.text,questions:j.questions.slice(0,3).map(q=>({q:q.q,options:q.options.slice(0,4),a:0})),ai:true};
+  S.aiPassages.push(p); if(S.aiPassages.length>40)S.aiPassages.shift(); save(); return p;
+}
+async function aiCoachNote(sess){
+  if(!S.apiKey)return;
+  try{
+    const t=await claude(`You are Coach Juno, a warm, upbeat reading coach talking out loud to ${S.child.name}, a 5th grader who is building her reading skills. She just read "${sess.title}". Results: ${sess.acc}% of words read correctly, ${sess.wcpm??"unknown"} words per minute, ${sess.comp} of ${sess.compTotal} questions right. Words she missed: ${sess.missed.join(", ")||"none"}. Write exactly two short spoken sentences: one specific piece of praise, and one simple tip for next time. Never mention grade levels. No emojis.`,200);
+    const note=t.trim(); if(!note)return; $("resNote").textContent=note; $("resNote").hidden=false; say(note);
+  }catch(e){}
+}
+
+/* ================= HOME ================= */
+function goHome(){
+  stopRec(); clearInterval(ticker); if(R)R.active=false;
+  const name=S.child.name; const done=countedThisWeek(); const won=done>=S.goal;
+  $("bill").textContent="$"+S.reward; $("bill").classList.toggle("won",won);
+  $("goalText").textContent= won?`Goal reached! You earned $${S.reward} this week.`:`Read ${S.goal} stories this week to earn $${S.reward}`;
+  $("goalDots").innerHTML=Array.from({length:S.goal},(_,i)=>`<span class="dot ${i<done?"on":""}">${i+1}</span>`).join("");
+  $("btnCheck").hidden=!!S.baseline; $("btnPractice").hidden=!S.baseline;
+  $("stStreak").textContent=streak(); $("stStars").textContent=S.stars; $("stStories").textContent=S.sessions.length;
+  const sb=$("srBanner");
+  if(!SR){sb.hidden=false;sb.textContent="Listening only works in Chrome, Edge, or Safari. Open this page in one of those.";}
+  else if(location.protocol==="file:"){sb.hidden=false;sb.textContent="Tip for grown-ups: put this page on a website (https) so the microphone works smoothly.";}
+  else sb.hidden=true;
+  show("s-home");
+  const left=S.goal-done;
+  say(!S.baseline?`Hi ${name}! I'm Coach Juno. First, let's do a quick reading check so I can find stories that are just right for you.`
+     : won?`Hi ${name}! You already earned your ${S.reward} dollars this week. Keep reading to get even stronger!`
+     : `Hi ${name}! ${left} more ${left===1?"story":"stories"} this week to earn ${S.reward} dollars.`);
+}
+$("btnCheck").onclick=startCheck;
+$("btnPractice").onclick=startPractice;
+$("btnTricky").onclick=startTricky;
+$("btnLogout").onclick=()=>{if(synth)synth.cancel();showLogin();};
+
+/* ================= LOGIN / SETUP ================= */
+let loginAs=null;
+function showLogin(){ $("tileKidName").textContent=S.child.name; $("pinForm").hidden=true; $("pinInput").value=""; $("pinErr").textContent=""; show("s-login"); }
+$("tileKid").onclick=()=>{loginAs="kid";$("pinWho").textContent=`${S.child.name}, enter your PIN`;$("pinForm").hidden=false;$("pinInput").value="";$("pinInput").focus();};
+$("tileParent").onclick=()=>{loginAs="parent";$("pinWho").textContent="Parent PIN";$("pinForm").hidden=false;$("pinInput").value="";$("pinInput").focus();};
+$("pinForm").onsubmit=e=>{e.preventDefault(); const v=$("pinInput").value;
+  if(loginAs==="kid"&&v===S.child.pin){goHome();} else if(loginAs==="parent"&&v===S.parentPin){showParent();}
+  else{$("pinErr").textContent="That PIN doesn't match. Try again.";$("pinInput").value="";}};
+$("setupForm").onsubmit=e=>{e.preventDefault();
+  const kp=$("setKidPin").value, pp=$("setParentPin").value;
+  if(!/^\d{4}$/.test(kp)||!/^\d{4}$/.test(pp)){$("setupErr").textContent="PINs need to be 4 digits.";return;}
+  if(kp===pp){$("setupErr").textContent="Use a different PIN for the parent.";return;}
+  S.child={name:$("setName").value.trim()||"Stella",pin:kp,interests:$("setInterests").value.trim()};
+  S.parentPin=pp; S.goal=+$("setGoal").value||5; S.reward=+$("setReward").value||5; save(); showLogin();};
+
+/* ================= PARENT ================= */
+function showParent(){
+  $("parentTitle").textContent=`${S.child.name}'s progress`;
+  const done=countedThisWeek(), wk=weekKey(), won=done>=S.goal;
+  // reward history: past weeks that hit goal
+  const byWeek={}; S.sessions.filter(s=>s.counts).forEach(s=>{const k=weekKey(new Date(s.date));byWeek[k]=(byWeek[k]||0)+1;});
+  const owed=Object.keys(byWeek).filter(k=>byWeek[k]>=S.goal && !S.paidWeeks[k]).sort();
+  const rc=$("rewardCard");
+  rc.innerHTML=`<h3>Weekly reward</h3><p>This week: <b>${done} of ${S.goal}</b> stories ${won?`— <b style="color:var(--money)">earned $${S.reward}</b>`:""}</p>`+
+    (owed.length?`<div class="note">You owe <b>$${S.reward*owed.length}</b> for ${owed.length} week${owed.length>1?"s":""}: ${owed.map(k=>"week of "+new Date(k+"T12:00").toLocaleDateString(undefined,{month:"short",day:"numeric"})).join(", ")}.</div><div><button class="primary" id="btnPaid" type="button">Mark as paid</button></div>`
+      :`<p class="muted">Nothing owed right now. A story counts once she reads at least 80% of it and answers the questions.</p>`);
+  if(owed.length)$("btnPaid").onclick=()=>{owed.forEach(k=>S.paidWeeks[k]=new Date().toISOString());save();showParent();};
+  $("pLevel").textContent=LEVELS[S.level]; $("pLevelSub").textContent=S.baseline?`Check on ${new Date(S.baseline.date).toLocaleDateString()}`:"Reading check not done yet";
+  const withW=S.sessions.filter(s=>s.wcpm!=null);
+  $("pWcpm").textContent=withW.length?withW[withW.length-1].wcpm:"–";
+  const last5=S.sessions.slice(-5); $("pAcc").textContent=last5.length?Math.round(last5.reduce((a,s)=>a+s.acc,0)/last5.length)+"%":"–";
+  $("pStreak").textContent=streak();
+  $("pSpark").innerHTML=spark(withW.map(s=>s.wcpm));
+  const tw=Object.entries(S.trouble).filter(([w,t])=>t.miss>t.win).sort((a,b)=>b[1].miss-a[1].miss).slice(0,30);
+  $("pWords").innerHTML=tw.length?tw.map(([w,t])=>`<span class="chip">${esc(w)} <small>×${t.miss}</small></span>`).join(""):'<span class="muted">None yet.</span>';
+  const rows=S.sessions.slice().reverse().slice(0,40);
+  $("pTable").innerHTML=`<tr><th>Date</th><th>Story</th><th>Level</th><th>Words/min</th><th>Accuracy</th><th>Questions</th><th>Helped</th></tr>`+
+    (rows.length?rows.map(s=>`<tr><td>${new Date(s.date).toLocaleDateString(undefined,{month:"short",day:"numeric"})}</td><td>${esc(s.title)}${s.mode==="check"?" (check)":""}</td><td>${LEVELS[s.level]}</td><td>${s.wcpm??"–"}</td><td>${s.acc}%</td><td>${s.comp}/${s.compTotal}</td><td>${s.helps}</td></tr>`).join(""):`<tr><td colspan="7" class="muted">No sessions yet.</td></tr>`);
+  $("cfgGoal").value=S.goal; $("cfgReward").value=S.reward; $("cfgInterests").value=S.child.interests||""; $("cfgLevel").value=S.level; $("cfgKey").value=S.apiKey||"";
+  $("cfgSaved").textContent=""; $("resetConfirm").hidden=true;
+  show("s-parent");
+}
+function spark(vals){
+  if(vals.length<2)return '<p class="muted">The chart appears after two stories.</p>';
+  const W=600,H=120,pad=24, max=Math.max(130,...vals), min=0;
+  const x=i=>pad+i*(W-2*pad)/(vals.length-1), y=v=>H-pad-(v-min)*(H-2*pad)/(max-min);
+  const pts=vals.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const ty=y(110).toFixed(1);
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Words per minute trend">
+    <line x1="${pad}" x2="${W-pad}" y1="${ty}" y2="${ty}" stroke="var(--line)" stroke-dasharray="4 4"/>
+    <text x="${W-pad}" y="${+ty-6}" text-anchor="end" font-size="11" fill="var(--muted)">110 = 5th-grade fall avg</text>
+    <polyline points="${pts}" fill="none" stroke="var(--ok)" stroke-width="3" stroke-linejoin="round"/>
+    <circle cx="${x(vals.length-1)}" cy="${y(vals[vals.length-1])}" r="5" fill="var(--ok)"/>
+    <text x="${x(vals.length-1)}" y="${y(vals[vals.length-1])-10}" text-anchor="end" font-size="12" font-weight="600" fill="var(--ink)">${vals[vals.length-1]}</text></svg>`;
+}
+$("settingsForm").onsubmit=e=>{e.preventDefault();
+  S.goal=Math.max(1,+$("cfgGoal").value||5); S.reward=Math.max(1,+$("cfgReward").value||5); S.child.interests=$("cfgInterests").value.trim();
+  S.level=Math.min(7,Math.max(1,+$("cfgLevel").value||S.level)); S.apiKey=$("cfgKey").value.trim(); save(); $("cfgSaved").textContent="Saved.";};
+$("btnParentOut").onclick=showLogin;
+$("btnReset").onclick=()=>{$("resetConfirm").hidden=false;};
+$("btnResetNo").onclick=()=>{$("resetConfirm").hidden=true;};
+$("btnResetYes").onclick=()=>{try{localStorage.removeItem(KEY);}catch(e){} S=blankState(); show("s-setup");};
+
+/* ================= BOOT ================= */
+if(!S.child||!S.parentPin) show("s-setup"); else showLogin();
+</script>
+</body>
+</html>
