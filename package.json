@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "microsoft-cognitiveservices-speech-sdk": "^1.52.0",
     "next": "16.4.2",
     "react": "19.3.1",
     "react-dom": "19.3.1"

@@ -1,6 +1,7 @@
 /* Word matching and reading alignment, ported from version 1. Pure functions; unit-tested. */
 
-export type WordStatus = "todo" | "ok" | "soft" | "skip" | "help";
+/** "miss": she said the word but Azure scored it as misread (milestone 3); an error, like skip and help. */
+export type WordStatus = "todo" | "ok" | "soft" | "skip" | "help" | "miss";
 
 export interface ReadWord {
   /** As displayed, with punctuation. */

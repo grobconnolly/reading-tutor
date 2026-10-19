@@ -4,6 +4,7 @@
   --accent:#E3892A; --accent-ink:#3E2300; --accent-soft:#FCEBD6;
   --ok:#1E8556; --ok-bg:#DAF1E5; --miss:#C2432D; --miss-bg:#FADFD8;
   --help:#7457BF; --help-bg:#EAE3F9; --cur:#FFE3A8; --money:#1E8556;
+  --warn:#8A5A00; --warn-bg:#FFE9B8;
   --display:var(--font-display), "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
   --read:var(--font-read), "Lexend", "Verdana", system-ui, sans-serif;
   --r:14px;
@@ -13,12 +14,12 @@
   --bg:#0F1621; --surface:#172131; --ink:#E7EDF5; --muted:#9AA8BA; --line:#2A394D;
   --accent:#F0A24A; --accent-ink:#2A1600; --accent-soft:#3A2810;
   --ok:#4CC58D; --ok-bg:#133427; --miss:#F2826D; --miss-bg:#3B1C17;
-  --help:#AA8EF0; --help-bg:#2A2145; --cur:#4C3C12; --money:#4CC58D; color-scheme:dark}}
+  --help:#AA8EF0; --help-bg:#2A2145; --cur:#4C3C12; --money:#4CC58D; --warn:#F2B957; --warn-bg:#3D2C08; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0F1621; --surface:#172131; --ink:#E7EDF5; --muted:#9AA8BA; --line:#2A394D;
   --accent:#F0A24A; --accent-ink:#2A1600; --accent-soft:#3A2810;
   --ok:#4CC58D; --ok-bg:#133427; --miss:#F2826D; --miss-bg:#3B1C17;
-  --help:#AA8EF0; --help-bg:#2A2145; --cur:#4C3C12; --money:#4CC58D; color-scheme:dark}
+  --help:#AA8EF0; --help-bg:#2A2145; --cur:#4C3C12; --money:#4CC58D; --warn:#F2B957; --warn-bg:#3D2C08; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0}
@@ -98,6 +99,7 @@ input[type=text],input[type=password],input[type=number],textarea{width:100%;bac
 .w.soft{color:var(--ok)}
 .w.skip{background:var(--miss-bg);color:var(--miss);text-decoration:underline wavy;text-underline-offset:6px}
 .w.help{background:var(--help-bg);color:var(--help)}
+.w.miss{background:var(--warn-bg);color:var(--warn);text-decoration:underline dotted;text-underline-offset:6px}
 .w.cur{background:var(--cur)}
 .w.model{background:var(--accent-soft)}
 .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem;color:var(--muted)}

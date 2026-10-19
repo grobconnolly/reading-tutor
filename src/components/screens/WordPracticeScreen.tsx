@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Coach } from "@/hooks/useCoach";
-import { hasSR, listenOnce, MIC_BLOCKED_MSG, type Listener } from "@/lib/speech";
-import { transcriptHasWord } from "@/lib/words";
+import { practicePassed } from "@/lib/azureAlign";
+import { hasSR, MIC_BLOCKED_MSG, practiceWord, prepareListening, type PracticeListener } from "@/lib/speech";
 
 const PRAISE = ["Yes! Perfect.", "You got it!", "Nice job!"];
 
@@ -23,7 +23,7 @@ export function WordPracticeScreen({ coach, list, intro, onResult, onDone }: {
   const gen = useRef(0);
   const tries = useRef(0);
   const wins = useRef(0);
-  const listener = useRef<Listener | null>(null);
+  const listener = useRef<PracticeListener | null>(null);
   const coachRef = useRef(coach);
   coachRef.current = coach;
   const cb = useRef({ onResult, onDone });
@@ -59,14 +59,15 @@ export function WordPracticeScreen({ coach, list, intro, onResult, onDone }: {
     coachRef.current.bubble("Your turn. Say it!");
     setMicOn(true);
     coachRef.current.setListening(true);
-    const l = listenOnce(6000, () => coachRef.current.bubble(MIC_BLOCKED_MSG));
+    // With Azure this is a single-utterance assessment of the word (spec 6.2 step 2); it passes at AZURE_RULES.practicePass.
+    const l = practiceWord(w, 6000, () => coachRef.current.bubble(MIC_BLOCKED_MSG));
     listener.current = l;
-    const alts = await l.promise;
+    const heard = await l.promise;
     if (g !== gen.current) return;
     listener.current = null;
     setMicOn(false);
     coachRef.current.setListening(false);
-    const hit = alts.some((a) => transcriptHasWord(a, w));
+    const hit = practicePassed(heard, w);
     cb.current.onResult(w, hit);
     if (hit) {
       wins.current++;
@@ -90,6 +91,7 @@ export function WordPracticeScreen({ coach, list, intro, onResult, onDone }: {
 
   useEffect(() => {
     let live = true;
+    void prepareListening();
     (async () => {
       await coachRef.current.say(intro);
       if (live) show(0);

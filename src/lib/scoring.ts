@@ -1,6 +1,7 @@
 /* Accuracy, WCPM, stars, leveling and reading-check routing. Pure functions; unit-tested. */
 
 import { MAX_LEVEL, MIN_LEVEL } from "./passages";
+import type { AzureScores } from "./azureAlign";
 import { cleanWord, type ReadWord, type WordStatus } from "./words";
 
 export interface ReadResult {
@@ -9,15 +10,17 @@ export interface ReadResult {
   /** Words attempted: everything up to the reading pointer, at least 1. */
   attempted: number;
   total: number;
-  /** ok / attempted, 0..1. Skipped and helped words count as errors. */
+  /** ok / attempted, 0..1. Skipped, helped and misread words count as errors. */
   acc: number;
   /** Words correct per minute, or null if she read for less than 8 seconds. */
   wcpm: number | null;
-  /** Unique missed words (skipped or helped), lowercase, longer than 2 letters. */
+  /** Unique missed words (skipped, helped or misread), lowercase, longer than 2 letters. */
   missed: string[];
   helps: number;
   /** Fraction of the passage reached, 0..1. */
   finishedPct: number;
+  /** Azure's accuracy, fluency and completeness when Azure listened (milestone 3). TODO(milestone 2): save as sessions.azure_scores. */
+  azure?: AzureScores;
 }
 
 /** Thresholds, in one place so they are easy to tune. */
@@ -59,7 +62,7 @@ export function scoreReading(
   for (let i = 0; i < p; i++) {
     const s = status[i];
     if (s === "ok" || s === "soft") ok++;
-    else if (s === "skip" || s === "help") missed.push(cleanWord(words[i].disp).toLowerCase());
+    else if (s === "skip" || s === "help" || s === "miss") missed.push(cleanWord(words[i].disp).toLowerCase());
   }
   const secs = startT != null && endT != null ? (endT - startT) / 1000 : 0;
   const wcpm = secs >= RULES.minSecondsForWcpm ? Math.round(ok / (secs / 60)) : null;

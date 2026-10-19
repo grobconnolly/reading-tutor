@@ -3,12 +3,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Coach } from "@/hooks/useCoach";
 import type { Passage } from "@/lib/passages";
+import { applyAzureSegment, rememberAzureScores, summarizeAzure, type AzureAlignState, type AzureSegmentStat } from "@/lib/azureAlign";
 import { RULES, scoreReading, type ReadResult } from "@/lib/scoring";
-import { getSR, hasSR, MIC_BLOCKED_MSG, type SpeechRecognizer, type SRResult } from "@/lib/speech";
+import { getSR, hasSR, listeningStatus, MIC_BLOCKED_MSG, prepareListening, type SpeechRecognizer, type SRResult } from "@/lib/speech";
 import { advanceTokens, cleanWord, toReadWords, tokenize, type AlignState, type ReadWord, type WordStatus } from "@/lib/words";
 
 /** Mutable reading state. Lives in a ref so recognizer callbacks and timers always see the latest values. */
-interface Engine extends AlignState {
+interface Engine extends AzureAlignState {
   words: ReadWord[];
   startT: number | null;
   endT: number | null;
@@ -20,10 +21,12 @@ interface Engine extends AlignState {
   helps: string[];
   /** Interim text the recognizer has not finalized yet. Safari can end a segment without finalizing it. */
   pendingInterim: string;
+  /** Azure only: fluency and length of each utterance it scored, for the session scores. */
+  azureSegs: AzureSegmentStat[];
 }
 
 function freshEngine(words: ReadWord[]): Engine {
-  return { words, status: words.map(() => "todo"), p: 0, startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "" };
+  return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "", azureSegs: [] };
 }
 
 /** She is being heard: reset the stall clock, and the WCPM clock if this is committed progress. */
@@ -34,8 +37,15 @@ function markActivity(R: Engine, committed: boolean) {
   if (R.startT == null) R.startT = R.openedAt + Math.min(1500, now - R.openedAt);
 }
 
-/** Apply a final result. The recognizer offers a few guesses; keep the one that fits the story best. */
+/** Apply a final result. Azure's segments carry per-word scores, so they map straight onto the story; the browser
+ *  recognizer offers a few guesses instead, and the one that fits the story best is kept. */
 function commitFinal(R: Engine, r: SRResult) {
+  if (r.azure) {
+    const gain = applyAzureSegment(R, r.azure);
+    R.azureSegs.push({ fluency: r.azure.fluency, durationMs: r.azure.durationMs });
+    if (gain > 0) markActivity(R, true);
+    return;
+  }
   let best: AlignState | null = null;
   let bestGain = -1;
   const n = Math.max(1, r.length);
@@ -71,10 +81,13 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
   onQuit: () => void;
 }) {
   const words = useMemo(() => toReadWords(passage.text), [passage]);
+  /** What Azure scores her reading against. */
+  const storyText = useMemo(() => words.map((w) => w.disp).join(" "), [words]);
   const eng = useRef<Engine>(freshEngine(words));
   const [view, setView] = useState<{ status: WordStatus[]; p: number; active: boolean }>({ status: eng.current.status.slice(), p: 0, active: false });
   const [reading, setReading] = useState(false);
   const [micOn, setMicOn] = useState(false);
+  const [micLabel, setMicLabel] = useState("Listening");
   const [modelIdx, setModelIdx] = useState(-1);
   const recRef = useRef<SpeechRecognizer | null>(null);
   const recGen = useRef(0);
@@ -112,7 +125,11 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     stopRec();
     clearTicker();
     render();
-    onFinishRef.current(scoreReading(R.words, R.status, R.p, R.startT, R.endT, R.helps.length));
+    const result = scoreReading(R.words, R.status, R.p, R.startT, R.endT, R.helps.length);
+    const azure = summarizeAzure(R, R.azureSegs);
+    if (azure) result.azure = azure;
+    rememberAzureScores(azure);
+    onFinishRef.current(result);
   }, [stopRec, clearTicker, render]);
 
   /** Stop listening and explain why, leaving her on the story so she can tap Start reading again. */
@@ -135,6 +152,7 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 3;
+    rec.referenceText = storyText;
     rec.onresult = (e) => {
       const R = eng.current;
       if (my !== recGen.current || !R.active || R.paused) return;
@@ -186,9 +204,10 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
       rec.start();
       recRef.current = rec;
       setMicOn(true);
+      setMicLabel(listeningStatus());
       coachRef.current.setListening(true);
     } catch { /* ignore */ }
-  }, [render, finishReading, stopWithMessage]);
+  }, [render, finishReading, stopWithMessage, storyText]);
 
   const helpWord = useCallback(async () => {
     const R = eng.current;
@@ -226,11 +245,13 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     if (now - R.lastProg > RULES.stallMs && R.p < R.words.length) await helpWord();
   }, [stopRec, startRec, helpWord]);
 
-  // Mount: fresh engine, Juno's intro. Unmount: stop everything.
+  // Mount: fresh engine, Juno's intro, and the Azure token so "Start reading" can open the mic in the same tap.
+  // Unmount: stop everything.
   useEffect(() => {
     eng.current = freshEngine(words);
     finished.current = false;
     render();
+    void prepareListening();
     coachRef.current.say(intro);
     return () => {
       stopRec();
@@ -334,7 +355,7 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
           <p className="label">{kicker}</p>
           <h2>{passage.title}</h2>
         </div>
-        <span>{micOn && <span className="mic">Listening</span>}</span>
+        <span>{micOn && <span className="mic">{micLabel}</span>}</span>
       </div>
       <div className="progress" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
       <div className="passage">
@@ -353,6 +374,7 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
         <span style={{ "--sw": "var(--ok)" } as React.CSSProperties}>Read it</span>
         <span style={{ "--sw": "var(--help)" } as React.CSSProperties}>Coach helped</span>
         <span style={{ "--sw": "var(--miss)" } as React.CSSProperties}>Skipped</span>
+        <span style={{ "--sw": "var(--warn)" } as React.CSSProperties}>Misread</span>
       </div>
       <div className="row">
         {!reading && <button className="primary big" type="button" onClick={onStart}>Start reading</button>}

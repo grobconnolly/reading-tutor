@@ -1,7 +1,17 @@
-/* Thin wrappers over the browser's built-in speech APIs (milestone 1). Azure replaces these later. */
+/* Thin wrappers over the browser's built-in speech APIs (milestone 1), and the switch that puts Azure in front of them
+ * (milestone 3): getSR() hands out the Azure recognizer whenever a token is in hand, the browser's otherwise. */
+
+import { type AzureSegment, wordAccuracy, type PracticeHeard } from "./azureAlign";
+import { AzureSpeechRecognizer, azureLastError, azureReady, prepareAzure, touchAzure } from "./azureRecognizer";
 
 export interface SRAlternative { transcript: string; confidence: number }
-export interface SRResult { isFinal: boolean; length: number; [index: number]: SRAlternative }
+export interface SRResult {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SRAlternative;
+  /** Azure only: the segment's word scores (final results). */
+  azure?: AzureSegment;
+}
 export interface SREvent { resultIndex: number; results: { length: number; [index: number]: SRResult } }
 export interface SRErrorEvent { error: string }
 export interface SpeechRecognizer {
@@ -9,6 +19,8 @@ export interface SpeechRecognizer {
   continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
+  /** Azure only: the text she is reading (or the practice word), scored against what she says. Ignored by the browser. */
+  referenceText?: string;
   onresult: ((e: SREvent) => void) | null;
   onerror: ((e: SRErrorEvent) => void) | null;
   onend: (() => void) | null;
@@ -18,14 +30,64 @@ export interface SpeechRecognizer {
 }
 type SRCtor = new () => SpeechRecognizer;
 
-export function getSR(): SRCtor | null {
+export type ListenEngine = "azure" | "browser";
+
+function browserSR(): SRCtor | null {
   if (typeof window === "undefined") return null;
   const w = window as unknown as { SpeechRecognition?: SRCtor; webkitSpeechRecognition?: SRCtor };
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
+/** The recognizer to use right now: Azure when a token and the SDK are ready, else the browser's own. */
+export function getSR(): SRCtor | null {
+  if (typeof window === "undefined") return null;
+  touchAzure();
+  if (azureReady()) return AzureSpeechRecognizer as unknown as SRCtor;
+  return browserSR();
+}
+
 export function hasSR(): boolean {
   return !!getSR();
+}
+
+/** Which engine getSR() would hand out right now. */
+export function listeningEngine(): ListenEngine | null {
+  if (typeof window === "undefined") return null;
+  if (azureReady()) return "azure";
+  return browserSR() ? "browser" : null;
+}
+
+let announced: ListenEngine | null = null;
+
+/**
+ * Fetch an Azure token and load the SDK so the next start() can use them synchronously (Safari only opens the
+ * microphone inside the tap that asked for it). Resolves with the engine that will listen. Safe to call often.
+ */
+export async function prepareListening(): Promise<ListenEngine | null> {
+  if (typeof window === "undefined") return null;
+  const ok = await prepareAzure();
+  const engine: ListenEngine | null = ok ? "azure" : browserSR() ? "browser" : null;
+  if (engine !== announced) {
+    announced = engine;
+    console.info(`[reading-coach] ${listeningStatus()}${engine !== "azure" && azureLastError() ? ` (Azure off: ${azureLastError()})` : ""}`);
+  }
+  return engine;
+}
+
+function browserName(): string {
+  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/CriOS|Chrome\//.test(ua)) return "Chrome";
+  if (/Safari\//.test(ua)) return "Safari";
+  return "this browser";
+}
+
+/** One line for the coach bar or the mic badge: "Listening with Azure" or "Listening with Safari". */
+export function listeningStatus(): string {
+  const engine = listeningEngine();
+  if (engine === "azure") return "Listening with Azure";
+  if (engine === "browser") return `Listening with ${browserName()}`;
+  return "Listening";
 }
 
 export function getSynth(): SpeechSynthesis | null {
@@ -124,23 +186,35 @@ export interface Listener {
   abort(): void;
 }
 
-/** Listen for one utterance and return every alternative transcript heard. */
-export function listenOnce(ms = 7000, onBlocked?: () => void): Listener {
+export interface PracticeListener {
+  promise: Promise<PracticeHeard>;
+  /** Stop listening now; the promise resolves with whatever was heard. */
+  abort(): void;
+}
+
+/**
+ * Listen for one utterance of `word` (spec 6.2 step 2). With Azure this is a single-utterance Pronunciation Assessment
+ * of that word and the result carries its accuracy score; with the browser only the transcripts come back.
+ */
+export function practiceWord(word: string, ms = 7000, onBlocked?: () => void): PracticeListener {
   const SR = getSR();
-  if (!SR) return { promise: Promise.resolve([]), abort() {} };
+  if (!SR) return { promise: Promise.resolve({ alts: [], accuracy: null }), abort() {} };
   const r = new SR();
   r.lang = "en-US";
   r.continuous = false;
   r.interimResults = false;
   r.maxAlternatives = 5;
+  if (word) r.referenceText = word;
   const got: string[] = [];
+  let accuracy: number | null = null;
   let fin = false;
-  let resolve: (v: string[]) => void = () => {};
-  const promise = new Promise<string[]>((res) => { resolve = res; });
-  const finish = () => { if (fin) return; fin = true; resolve(got); };
+  let resolve: (v: PracticeHeard) => void = () => {};
+  const promise = new Promise<PracticeHeard>((res) => { resolve = res; });
+  const finish = () => { if (fin) return; fin = true; resolve({ alts: got, accuracy }); };
   r.onresult = (e) => {
     const first = e.results[0];
     for (let i = 0; i < first.length; i++) got.push(first[i].transcript);
+    if (word && first.azure) accuracy = wordAccuracy(first.azure, word);
   };
   r.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") onBlocked?.(); };
   r.onend = finish;
@@ -150,4 +224,10 @@ export function listenOnce(ms = 7000, onBlocked?: () => void): Listener {
     promise,
     abort() { clearTimeout(timer); try { r.abort(); } catch { /* ignore */ } finish(); },
   };
+}
+
+/** Listen for one utterance and return every alternative transcript heard. */
+export function listenOnce(ms = 7000, onBlocked?: () => void): Listener {
+  const l = practiceWord("", ms, onBlocked);
+  return { promise: l.promise.then((h) => h.alts), abort: l.abort };
 }
