@@ -277,8 +277,9 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     onQuit();
   }
 
-  /** "Hear it first": Juno reads the story while each word highlights. Uses word-boundary events when the
-   *  browser fires them, and falls back to estimated timings when it doesn't (iOS Safari often doesn't). */
+  /** "Hear it first": Juno reads the story while each word highlights. The cloud voice sends a start time per word;
+   *  the device voice fires word-boundary events in some browsers; otherwise timings are estimated (iOS Safari often
+   *  fires none). */
   async function onModel() {
     if (eng.current.active) return;
     const text = words.map((w) => w.disp).join(" ");
@@ -311,6 +312,11 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
         stopEstimate();
         const i = starts.findIndex((s, k) => e.charIndex >= s && (k === starts.length - 1 || e.charIndex < starts[k + 1]));
         if (i >= 0) setModelIdx(i);
+      },
+      onword: (i) => {
+        gotBoundary = true;
+        stopEstimate();
+        if (i < words.length) setModelIdx(i);
       },
     });
     gotBoundary = true;
