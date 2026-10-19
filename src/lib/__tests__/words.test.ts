@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advance, advanceTokens, norm, toReadWords, tokenize, transcriptHasWord, wordMatch, type AlignState } from "../words";
+import { advance, advanceTokens, norm, sameWord, toReadWords, tokenize, transcriptHasWord, wordMatch, type AlignState } from "../words";
 
 function state(text: string): AlignState {
   const words = toReadWords(text);
@@ -37,6 +37,16 @@ describe("wordMatch", () => {
   it("accepts plural / singular slips on 4+ letter words", () => {
     expect(wordMatch("goats", "goat")).toBe(true);
     expect(wordMatch("dogs", "dog")).toBe(false); // target too short for the plural rule
+  });
+});
+
+describe("sameWord", () => {
+  it("is exact apart from numbers and homophones", () => {
+    expect(sameWord("Carlos", "carlos")).toBe(true);
+    expect(sameWord("4", "four")).toBe(true);
+    expect(sameWord("their", "there")).toBe(true);
+    expect(sameWord("jumps", "jump")).toBe(false);
+    expect(sameWord("carlowes", "carlos")).toBe(false);
   });
 });
 

@@ -170,6 +170,20 @@ describe("applyAzureSegment: words she added or swapped (Rob's iPad cases)", () 
     expect(st2.p).toBe(11);
     expect(st2.inserted).toEqual([]);
   });
+  it("marks a plural (or other fuzzy) slip as misread even with a passing score: Rob's every-word-plural read", () => {
+    // Azure returned the story's own form for most plurals (that is on Azure); where it returned what she said, the
+    // plural tolerance must not turn the word green.
+    const st = state("He likes to run and jump. Max goes to the park.");
+    applyAzureSegment(st, seg([["he"], ["likes"], ["to"], ["runs", "None", 97], ["and"], ["jumps", "None", 63], ["max"], ["goes"], ["to"], ["the"], ["parks", "None", 88]]));
+    expect(st.status).toEqual(["ok", "ok", "ok", "miss", "ok", "miss", "ok", "ok", "ok", "ok", "miss"]);
+    expect(st.inserted).toEqual([]);
+    expect(st.azureAcc[5]).toBe(63);
+  });
+  it("still accepts numbers and homophones as the same word", () => {
+    const st = state("Strike one! Watch the ball all the way to the bat.");
+    applyAzureSegment(st, seg([["strike"], ["1", "None", 95], ["watch"], ["the"], ["ball"], ["all"], ["the"], ["way"], ["two", "None", 90], ["the"], ["bat"]]));
+    expect(st.status).toEqual(["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  });
   it("counts additions at the end of a segment too", () => {
     const st = state("The dog ran.");
     applyAzureSegment(st, seg([["the"], ["dog"], ["really"], ["fast"]]));

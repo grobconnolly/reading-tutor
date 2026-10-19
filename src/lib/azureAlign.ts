@@ -7,7 +7,7 @@
  * a per-word score that flags a word she said but got wrong ("miss"). Single-utterance assessments (word practice)
  * do carry Omission/Insertion tags, and those are handled too. */
 
-import { advance, advanceTokens, norm, SMALL, transcriptHasWord, wordMatch, type AlignState } from "./words";
+import { advance, advanceTokens, norm, sameWord, SMALL, transcriptHasWord, wordMatch, type AlignState } from "./words";
 
 /** Thresholds, in one place so they are easy to tune. */
 export const AZURE_RULES = {
@@ -113,10 +113,14 @@ const REPEAT_BACK = 4;
 const JUMP_CONFIRM = 3;
 const JUMP_SCAN = 40;
 
-/** The word just matched (at p-1) was heard with this score: keep the score and downgrade a misread. */
-function settle(st: AzureAlignState, accuracy: number, bad: boolean): void {
+/**
+ * The word just matched (at p-1) was heard as `tok` with this score: keep the score and downgrade a misread. Azure
+ * returns the story's own spelling for a word read right, so a match that only works through the matcher's plural or
+ * spelling slack ("jumps" for "jump") means she said a different word, whatever the score.
+ */
+function settle(st: AzureAlignState, tok: string, accuracy: number, bad: boolean): void {
   const j = st.p - 1;
-  if (bad) st.status[j] = "miss";
+  if (bad || !sameWord(tok, st.words[j].norm)) st.status[j] = "miss";
   st.azureAcc[j] = accuracy;
 }
 
@@ -198,7 +202,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
     if (!tok) continue;
     const bad = misread(w);
     const before = st.p;
-    if (advance(st, tok)) { settle(st, w.accuracy, bad); placed(before); omitted = 0; continue; }
+    if (advance(st, tok)) { settle(st, tok, w.accuracy, bad); placed(before); omitted = 0; continue; }
     // Azure tagged k reference words omitted right before this one: trust it past the window if the word fits there.
     if (omitted > 0 && omitted <= AZURE_RULES.maxOmissionJump) {
       const k = st.p + omitted;
@@ -206,7 +210,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
         for (let x = st.p; x < k; x++) if (st.status[x] === "todo") st.status[x] = SMALL.has(st.words[x].norm) ? "soft" : "skip";
         st.status[k] = "ok";
         st.p = k + 1;
-        settle(st, w.accuracy, bad);
+        settle(st, tok, w.accuracy, bad);
         placed(before);
         omitted = 0;
         continue;
@@ -217,13 +221,13 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
     const n1 = ws[i + 1] && spoken(ws[i + 1]) ? ws[i + 1] : null;
     const n2 = n1 && ws[i + 2] && spoken(ws[i + 2]) ? ws[i + 2] : null;
     if (n1 && advance(st, tok + norm(n1.word))) {
-      settle(st, (w.accuracy + n1.accuracy) / 2, bad || misread(n1));
+      settle(st, tok + norm(n1.word), (w.accuracy + n1.accuracy) / 2, bad || misread(n1));
       placed(before);
       i += 1;
       continue;
     }
     if (n1 && n2 && advance(st, tok + norm(n1.word) + norm(n2.word))) {
-      settle(st, (w.accuracy + n1.accuracy + n2.accuracy) / 3, bad || misread(n1) || misread(n2));
+      settle(st, tok + norm(n1.word) + norm(n2.word), (w.accuracy + n1.accuracy + n2.accuracy) / 3, bad || misread(n1) || misread(n2));
       placed(before);
       i += 2;
       continue;
@@ -231,7 +235,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
     // One heard token for two story words ("baseball" for "base ball").
     const a = st.words[st.p], b = st.words[st.p + 1];
     if (a && b && a.norm.length >= 2 && b.norm.length >= 2 && wordMatch(tok, a.norm + b.norm)) {
-      st.status[st.p] = st.status[st.p + 1] = bad ? "miss" : "ok";
+      st.status[st.p] = st.status[st.p + 1] = bad || !sameWord(tok, a.norm + b.norm) ? "miss" : "ok";
       st.azureAcc[st.p] = st.azureAcc[st.p + 1] = w.accuracy;
       st.p += 2;
       resolvePending(st, pending, before, before);
@@ -244,7 +248,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
       for (let x = st.p; x < k; x++) if (st.status[x] === "todo") st.status[x] = SMALL.has(st.words[x].norm) ? "soft" : "skip";
       st.status[k] = "ok";
       st.p = k + 1;
-      settle(st, w.accuracy, bad);
+      settle(st, tok, w.accuracy, bad);
       pending.length = 0;
       continue;
     }

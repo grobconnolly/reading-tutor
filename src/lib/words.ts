@@ -65,6 +65,16 @@ export function wordMatch(heard: string, target: string): boolean {
   return false;
 }
 
+/** The same word, allowing only numbers and listed homophones: no plural or spelling slack. The Azure path uses this
+ *  to tell a word read right from one that only slipped through the recognizer tolerances ("jumps" for "jump"). */
+export function sameWord(heard: string, target: string): boolean {
+  let h = norm(heard);
+  const t = norm(target);
+  if (!h || !t) return false;
+  if (NUM[h]) h = NUM[h];
+  return h === t || (SAME[t] || []).map(norm).includes(h);
+}
+
 export function tokenize(text: string): string[] {
   return String(text).split(/[\s\-–—]+/).map(norm).filter(Boolean);
 }
