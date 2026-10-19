@@ -14,6 +14,14 @@ describe("scoreReading", () => {
     expect(r.missed).toEqual(["today"]); // "on" is 2 letters, filtered out
     expect(r.finishedPct).toBeCloseTo(9 / 11);
   });
+  it("counts added words as errors but never as practice words", () => {
+    const status: WordStatus[] = words.map(() => "ok");
+    const r = scoreReading(words, status, words.length, 0, 60000, 0, 3);
+    expect(r.insertions).toBe(3);
+    expect(r.acc).toBeCloseTo(11 / 14);
+    expect(r.missed).toEqual([]);
+    expect(scoreReading(words, status, words.length, 0, 60000, 0).insertions).toBe(0);
+  });
   it("reports no wcpm under 8 seconds of reading", () => {
     const status: WordStatus[] = words.map(() => "ok");
     expect(scoreReading(words, status, words.length, 0, 5000, 0).wcpm).toBeNull();

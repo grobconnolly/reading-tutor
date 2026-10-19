@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Coach } from "@/hooks/useCoach";
 import type { Passage } from "@/lib/passages";
-import { applyAzureSegment, rememberAzureScores, summarizeAzure, type AzureAlignState, type AzureSegmentStat } from "@/lib/azureAlign";
+import { applyAzureSegment, AZURE_RULES, rememberAzureScores, summarizeAzure, type AzureAlignState, type AzureSegmentStat } from "@/lib/azureAlign";
 import { RULES, scoreReading, type ReadResult } from "@/lib/scoring";
 import { getSR, hasSR, listeningEngine, listeningStatus, MIC_BLOCKED_MSG, prepareListening, type ListenEngine, type SpeechRecognizer, type SRResult } from "@/lib/speech";
 import { advanceTokens, cleanWord, toReadWords, tokenize, type AlignState, type ReadWord, type WordStatus } from "@/lib/words";
@@ -25,10 +25,36 @@ interface Engine extends AzureAlignState {
   azureSegs: AzureSegmentStat[];
   /** Every engine that listened during this read (Azure may hand over to the browser mid-story). */
   listeners: Set<ListenEngine>;
+  /** Sentence number of each story word, for the added-words nudge. */
+  sentenceOf: number[];
+  curSentence: number;
+  insertedSeen: number;
+  insertedInSentence: number;
+  nudgedSentence: number;
+}
+
+/** 0 for the first sentence, counting up after each word that ends one. */
+function sentenceIndexes(words: ReadWord[]): number[] {
+  let s = 0;
+  return words.map((w) => { const cur = s; if (/[.!?]["”’']*$/.test(w.disp)) s++; return cur; });
 }
 
 function freshEngine(words: ReadWord[]): Engine {
-  return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "", azureSegs: [], listeners: new Set() };
+  return {
+    words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), inserted: [], startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "", azureSegs: [], listeners: new Set(),
+    sentenceOf: sentenceIndexes(words), curSentence: 0, insertedSeen: 0, insertedInSentence: 0, nudgedSentence: -1,
+  };
+}
+
+/** She has added words that are not on the page: true when Juno should say so (once per sentence, never for one slip). */
+function insertionNudgeDue(R: Engine): boolean {
+  const s = R.sentenceOf[Math.min(R.p, R.words.length - 1)] ?? 0;
+  if (s !== R.curSentence) { R.curSentence = s; R.insertedInSentence = 0; }
+  const added = R.inserted.length - R.insertedSeen;
+  R.insertedSeen = R.inserted.length;
+  R.insertedInSentence += added;
+  if (added > 0 && R.insertedInSentence >= AZURE_RULES.nudgeInsertionsAt && R.nudgedSentence !== s) { R.nudgedSentence = s; return true; }
+  return false;
 }
 
 /** She is being heard: reset the stall clock, and the WCPM clock if this is committed progress. */
@@ -100,6 +126,8 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
   coachRef.current = coach;
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
+  /** Set once startRec exists: the added-words nudge pauses the mic, speaks, and starts it again. */
+  const nudgeRef = useRef<() => Promise<void>>(async () => {});
 
   const render = useCallback((pv?: AlignState) => {
     const st = pv ?? eng.current;
@@ -127,11 +155,11 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     stopRec();
     clearTicker();
     render();
-    const result = scoreReading(R.words, R.status, R.p, R.startT, R.endT, R.helps.length);
+    const result = scoreReading(R.words, R.status, R.p, R.startT, R.endT, R.helps.length, R.inserted.length);
     const azure = summarizeAzure(R, R.azureSegs);
     if (azure) result.azure = azure;
     if (R.listeners.size) result.listener = R.listeners.size > 1 ? "mixed" : R.listeners.has("azure") ? "azure" : "browser";
-    rememberAzureScores(azure, result.listener);
+    rememberAzureScores(azure, result.listener, R.inserted.length);
     onFinishRef.current(result);
   }, [stopRec, clearTicker, render]);
 
@@ -180,7 +208,8 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
       } else {
         render();
       }
-      if (R.p >= R.words.length) finishReading();
+      if (R.p >= R.words.length) { finishReading(); return; }
+      if (insertionNudgeDue(R)) void nudgeRef.current();
     };
     rec.onerror = (e) => {
       if (my !== recGen.current) return;
@@ -213,6 +242,19 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
       coachRef.current.setListening(true);
     } catch { /* ignore */ }
   }, [render, finishReading, stopWithMessage, storyText]);
+
+  /** She is adding words that are not on the page (Azure heard them): one reminder per sentence, then back to listening. */
+  const nudgeInsertions = useCallback(async () => {
+    const R = eng.current;
+    if (!R.active || R.paused) return;
+    R.paused = true;
+    stopRec();
+    await coachRef.current.say("Just the words on the page.");
+    R.lastProg = Date.now();
+    R.paused = false;
+    if (R.active) startRec();
+  }, [stopRec, startRec]);
+  nudgeRef.current = nudgeInsertions;
 
   const helpWord = useCallback(async () => {
     const R = eng.current;

@@ -17,6 +17,8 @@ export const AZURE_RULES = {
   practicePass: 70,
   /** Omission tags right before a heard word may carry the pointer this far past the lookahead window. */
   maxOmissionJump: 12,
+  /** Juno says "Just the words on the page." once a sentence has this many added words; never for a single slip. */
+  nudgeInsertionsAt: 2,
 } as const;
 
 export type AzureErrorType = "None" | "Omission" | "Insertion" | "Mispronunciation" | "UnexpectedBreak" | "MissingBreak" | "Monotone";
@@ -93,13 +95,20 @@ export function parseAzureJson(raw: string | null | undefined): AzureSegment | n
 
 /* ---------- reading: segment -> story statuses ---------- */
 
-/** The reading state plus Azure's per-word accuracy (null until Azure heard that word). */
+/** The reading state plus Azure's per-word accuracy (null until Azure heard that word) and the words she added. */
 export interface AzureAlignState extends AlignState {
   azureAcc: (number | null)[];
+  /** Words she said that have no place in the story (insertions), in the order heard. Errors, but not practice words. */
+  inserted: string[];
 }
 
 const spoken = (w: AzureWord) => w.errorType !== "Omission" && w.errorType !== "Insertion";
 const misread = (w: AzureWord) => w.errorType === "Mispronunciation" || w.accuracy < AZURE_RULES.missBelow;
+
+/** How far past the lookahead window a heard word may still be "reading ahead" rather than an insertion. */
+const FAR_AHEAD = 12;
+/** How far back a heard word may match an already-read word and count as a repeat or self-correction. */
+const REPEAT_BACK = 4;
 
 /** The word just matched (at p-1) was heard with this score: keep the score and downgrade a misread. */
 function settle(st: AzureAlignState, accuracy: number, bad: boolean): void {
@@ -108,32 +117,65 @@ function settle(st: AzureAlignState, accuracy: number, bad: boolean): void {
   st.azureAcc[j] = accuracy;
 }
 
+/** She said these words right before a match that jumped story words: pair them up as substitutions ("saw" for
+ *  "was" marks "was" misread, not skipped); whatever is left over was added to the story. */
+function resolvePending(st: AzureAlignState, pending: string[], from: number, to: number): void {
+  let k = 0;
+  for (let i = from; i < to && k < pending.length; i++) {
+    if (st.status[i] !== "skip" && st.status[i] !== "soft") continue;
+    st.status[i] = "miss";
+    st.azureAcc[i] = 0;
+    k++;
+  }
+  for (; k < pending.length; k++) st.inserted.push(pending[k]);
+  pending.length = 0;
+}
+
+/** A word she just read again (or corrected herself on): not an error. */
+function isRepeat(st: AlignState, tok: string): boolean {
+  for (let i = Math.max(0, st.p - REPEAT_BACK); i < st.p; i++) if (wordMatch(tok, st.words[i].norm)) return true;
+  return false;
+}
+
+/** A word that sits further ahead than the lookahead reaches: she may have jumped a line, which stall help sorts out. */
+function isFarAhead(st: AlignState, tok: string): boolean {
+  const n = st.words.length;
+  for (let i = st.p + 5; i < Math.min(n, st.p + 1 + FAR_AHEAD); i++) if (wordMatch(tok, st.words[i].norm)) return true;
+  return false;
+}
+
 /**
  * Apply one recognized segment. Heard words advance the pointer through the lookahead matcher; a heard word Azure
- * scored under the threshold (or tagged Mispronunciation) is marked "miss" instead of "ok". Returns how many story
- * words were advanced.
+ * scored under the threshold (or tagged Mispronunciation) is marked "miss" instead of "ok". A heard word with no
+ * place in the story becomes a substitution for a story word the next match jumps over, or else an insertion in
+ * `st.inserted`. Returns how many story words were advanced.
  */
 export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): number {
   const start = st.p;
   const ws = seg.words;
   let omitted = 0;
+  const pending: string[] = [];
+  const placed = (from: number) => resolvePending(st, pending, from, st.p - 1);
   for (let i = 0; i < ws.length; i++) {
     const w = ws[i];
     if (w.errorType === "Omission") { omitted++; continue; }
     if (w.errorType === "Insertion") {
-      // Heard, but Azure could not place it in the reference. Treat the run of insertions like plain recognizer
-      // tokens: a name it split ("car", "los") still joins up to the story word, unscored.
+      // Tagged by a single-utterance assessment. Try the run as plain tokens first: a name the recognizer split
+      // ("car", "los") still joins up to the story word, unscored; what does not fit was added.
       const run: string[] = [];
       while (i < ws.length && ws[i].errorType === "Insertion" && run.length < 3) run.push(norm(ws[i++].word));
       i--;
-      advanceTokens(st, run.filter(Boolean));
+      const before = st.p;
+      if (advanceTokens(st, run.filter(Boolean)) === 0) pending.push(...run.filter(Boolean));
+      else placed(before);
       omitted = 0;
       continue;
     }
     const tok = norm(w.word);
     if (!tok) continue;
     const bad = misread(w);
-    if (advance(st, tok)) { settle(st, w.accuracy, bad); omitted = 0; continue; }
+    const before = st.p;
+    if (advance(st, tok)) { settle(st, w.accuracy, bad); placed(before); omitted = 0; continue; }
     // Azure tagged k reference words omitted right before this one: trust it past the window if the word fits there.
     if (omitted > 0 && omitted <= AZURE_RULES.maxOmissionJump) {
       const k = st.p + omitted;
@@ -142,6 +184,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
         st.status[k] = "ok";
         st.p = k + 1;
         settle(st, w.accuracy, bad);
+        placed(before);
         omitted = 0;
         continue;
       }
@@ -152,11 +195,13 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
     const n2 = n1 && ws[i + 2] && spoken(ws[i + 2]) ? ws[i + 2] : null;
     if (n1 && advance(st, tok + norm(n1.word))) {
       settle(st, (w.accuracy + n1.accuracy) / 2, bad || misread(n1));
+      placed(before);
       i += 1;
       continue;
     }
     if (n1 && n2 && advance(st, tok + norm(n1.word) + norm(n2.word))) {
       settle(st, (w.accuracy + n1.accuracy + n2.accuracy) / 3, bad || misread(n1) || misread(n2));
+      placed(before);
       i += 2;
       continue;
     }
@@ -166,8 +211,14 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
       st.status[st.p] = st.status[st.p + 1] = bad ? "miss" : "ok";
       st.azureAcc[st.p] = st.azureAcc[st.p + 1] = w.accuracy;
       st.p += 2;
+      resolvePending(st, pending, before, before);
+      continue;
     }
+    // Nowhere to put it. A repeat is fine, and a word from further down the page is a jump, not an addition.
+    if (isRepeat(st, tok) || isFarAhead(st, tok)) continue;
+    pending.push(tok);
   }
+  resolvePending(st, pending, st.p, st.p); // whatever is still pending at the end of the segment was added
   return st.p - start;
 }
 
@@ -236,15 +287,22 @@ export function practicePassed(heard: PracticeHeard, word: string): boolean {
 
 let last: AzureScores | null = null;
 let lastWho: "azure" | "browser" | "mixed" | null = null;
+let lastAdded = 0;
 
 /**
  * The reading screen leaves the latest session's scores (and which engine heard it) here and the results screen shows
  * them. TODO(milestone 2): pass ReadResult.azure and .listener through the session save instead and persist the scores
  * in sessions.azure_scores.
  */
-export function rememberAzureScores(scores: AzureScores | null | undefined, listener?: "azure" | "browser" | "mixed" | null): void {
+export function rememberAzureScores(scores: AzureScores | null | undefined, listener?: "azure" | "browser" | "mixed" | null, insertions = 0): void {
   last = scores ?? null;
   lastWho = listener ?? null;
+  lastAdded = insertions;
+}
+
+/** How many words she added in the latest read. */
+export function lastInsertions(): number {
+  return lastAdded;
 }
 
 export function lastAzureScores(): AzureScores | null {

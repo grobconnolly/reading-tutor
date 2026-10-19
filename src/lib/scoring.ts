@@ -10,7 +10,7 @@ export interface ReadResult {
   /** Words attempted: everything up to the reading pointer, at least 1. */
   attempted: number;
   total: number;
-  /** ok / attempted, 0..1. Skipped, helped and misread words count as errors. */
+  /** ok / (attempted + insertions), 0..1. Skipped, helped, misread and added words count as errors. */
   acc: number;
   /** Words correct per minute, or null if she read for less than 8 seconds. */
   wcpm: number | null;
@@ -23,6 +23,8 @@ export interface ReadResult {
   azure?: AzureScores;
   /** Which engine heard the read: Azure can flag a word said wrong ("tired" for "tried"); the browser recognizer cannot. */
   listener?: Listener;
+  /** Words she said that are not in the story (Azure only; the browser recognizer cannot tell). Errors, but not practice words. */
+  insertions?: number;
 }
 
 /** "mixed" when Azure dropped out mid-story and the browser recognizer finished it. */
@@ -59,6 +61,7 @@ export function scoreReading(
   startT: number | null,
   endT: number | null,
   helps: number,
+  insertions = 0,
 ): ReadResult {
   const n = words.length;
   const attempted = Math.max(p, 1);
@@ -72,7 +75,7 @@ export function scoreReading(
   const secs = startT != null && endT != null ? (endT - startT) / 1000 : 0;
   const wcpm = secs >= RULES.minSecondsForWcpm ? Math.round(ok / (secs / 60)) : null;
   const uniqMissed = [...new Set(missed)].filter((w) => w.length > 2);
-  return { ok, attempted, total: n, acc: ok / attempted, wcpm, missed: uniqMissed, helps, finishedPct: n ? p / n : 0 };
+  return { ok, attempted, total: n, acc: ok / (attempted + insertions), wcpm, missed: uniqMissed, helps, finishedPct: n ? p / n : 0, insertions };
 }
 
 /** 1 for finishing, +1 for accuracy >= 93%, +1 for all questions right. */

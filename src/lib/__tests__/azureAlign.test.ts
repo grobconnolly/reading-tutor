@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyAzureSegment, AZURE_RULES, lastAzureScores, lastListener, listenerNote, parseAzureJson, practicePassed, rememberAzureScores, summarizeAzure, wordAccuracy,
+  applyAzureSegment, AZURE_RULES, lastAzureScores, lastInsertions, lastListener, listenerNote, parseAzureJson, practicePassed, rememberAzureScores, summarizeAzure, wordAccuracy,
   type AzureAlignState, type AzureErrorType, type AzureSegment, type AzureWord,
 } from "../azureAlign";
 import { toReadWords } from "../words";
@@ -17,7 +17,7 @@ function seg(words: W[], extra: Partial<AzureSegment> = {}): AzureSegment {
 
 function state(text: string): AzureAlignState {
   const words = toReadWords(text);
-  return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null) };
+  return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), inserted: [] };
 }
 
 describe("parseAzureJson", () => {
@@ -113,11 +113,61 @@ describe("applyAzureSegment: continuous mode (heard words only)", () => {
   });
 });
 
+describe("applyAzureSegment: words she added or swapped (Rob's iPad cases)", () => {
+  it("counts words with no place in the story as insertions and leaves the story words alone", () => {
+    const st = state("Watch the ball all the way to the bat.");
+    expect(applyAzureSegment(st, seg([["watch"], ["the"], ["big"], ["red"], ["ball"], ["all"], ["the"], ["way"], ["to"], ["the"], ["bat"]]))).toBe(9);
+    expect(st.status).toEqual(["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+    expect(st.inserted).toEqual(["big", "red"]);
+  });
+  it("pairs an unplaced word with the story word the next match jumps, as a substitution (saw for was)", () => {
+    const st = state("It was a long day.");
+    applyAzureSegment(st, seg([["it"], ["saw"], ["a"], ["long"], ["day"]]));
+    expect(st.status).toEqual(["ok", "miss", "ok", "ok", "ok"]);
+    expect(st.azureAcc[1]).toBe(0);
+    expect(st.inserted).toEqual([]);
+  });
+  it("flags tried said as tired and from said as form, whether Azure returns her word or a low-scored story word", () => {
+    const a = state("She tried to open the box from the shelf.");
+    applyAzureSegment(a, seg([["she"], ["tired"], ["to"], ["open"], ["the"], ["box"], ["form"], ["the"], ["shelf"]]));
+    expect(a.status).toEqual(["ok", "miss", "ok", "ok", "ok", "ok", "miss", "ok", "ok"]);
+    expect(a.inserted).toEqual([]);
+    const b = state("She tried to open the box from the shelf.");
+    applyAzureSegment(b, seg([["she"], ["tried", "Mispronunciation", 35], ["to"], ["open"], ["the"], ["box"], ["from", "None", 48], ["the"], ["shelf"]]));
+    expect(b.status).toEqual(["ok", "miss", "ok", "ok", "ok", "ok", "miss", "ok", "ok"]);
+  });
+  it("a swap plus an extra word: one substitution, one insertion", () => {
+    const st = state("the small ball rolled");
+    applyAzureSegment(st, seg([["the"], ["big"], ["red"], ["ball"], ["rolled"]]));
+    expect(st.status).toEqual(["ok", "miss", "ok", "ok"]);
+    expect(st.inserted).toEqual(["red"]);
+  });
+  it("does not count a repeat or a self-correction", () => {
+    const st = state("Carlos was the youngest player.");
+    applyAzureSegment(st, seg([["carlos"], ["was"], ["carlos"], ["was"], ["the"], ["youngest"], ["player"]]));
+    expect(st.status).toEqual(["ok", "ok", "ok", "ok", "ok"]);
+    expect(st.inserted).toEqual([]);
+  });
+  it("does not count a word from further down the page as an addition", () => {
+    const st = state("one two three four five six seven eight nine ten");
+    applyAzureSegment(st, seg([["one"], ["eight"]]));
+    expect(st.inserted).toEqual([]);
+    expect(st.p).toBe(1);
+  });
+  it("counts additions at the end of a segment too", () => {
+    const st = state("The dog ran.");
+    applyAzureSegment(st, seg([["the"], ["dog"], ["really"], ["fast"]]));
+    expect(st.status).toEqual(["ok", "ok", "todo"]);
+    expect(st.inserted).toEqual(["really", "fast"]);
+  });
+});
+
 describe("applyAzureSegment: single-shot tags (Omission, Insertion)", () => {
-  it("ignores an inserted filler word", () => {
+  it("records an inserted filler word without touching the story words", () => {
     const st = state("Her brother suggested a volcano.");
     applyAzureSegment(st, seg([["her"], ["brother"], ["um", "Insertion", 0], ["suggested"], ["a"], ["volcano"]]));
     expect(st.status).toEqual(["ok", "ok", "ok", "ok", "ok"]);
+    expect(st.inserted).toEqual(["um"]);
   });
   it("joins inserted pieces of a split name, unscored", () => {
     const st = state("Carlos was tired.");
@@ -184,10 +234,11 @@ describe("word practice", () => {
 });
 
 describe("hand-off to the results screen", () => {
-  it("keeps the latest scores and listener, or none", () => {
-    rememberAzureScores({ accuracy: 90, fluency: 80, completeness: 70 }, "azure");
+  it("keeps the latest scores, listener and added-word count, or none", () => {
+    rememberAzureScores({ accuracy: 90, fluency: 80, completeness: 70 }, "azure", 3);
     expect(lastAzureScores()).toEqual({ accuracy: 90, fluency: 80, completeness: 70 });
     expect(lastListener()).toBe("azure");
+    expect(lastInsertions()).toBe(3);
     rememberAzureScores(null, "browser");
     expect(lastAzureScores()).toBeNull();
     expect(lastListener()).toBe("browser");

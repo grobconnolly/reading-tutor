@@ -1,6 +1,6 @@
 "use client";
 
-import { lastAzureScores, lastListener, listenerNote, type AzureScores } from "@/lib/azureAlign";
+import { lastAzureScores, lastInsertions, lastListener, listenerNote, type AzureScores } from "@/lib/azureAlign";
 import type { Listener } from "@/lib/scoring";
 import { browserName } from "@/lib/speech";
 
@@ -20,11 +20,14 @@ export interface ResultsView {
   azure?: AzureScores | null;
   /** Which engine heard the read; same hand-off as `azure` until milestone 2. */
   listener?: Listener | null;
+  /** Words she added that are not in the story; same hand-off. */
+  insertions?: number | null;
 }
 
 export function ResultsScreen({ view, onHome }: { view: ResultsView; onHome: () => void }) {
   const azure = view.azure ?? lastAzureScores();
   const heardBy = listenerNote(view.listener ?? lastListener(), browserName());
+  const insertions = view.insertions ?? lastInsertions();
   return (
     <section className="card stack">
       <p className="label">{view.kicker}</p>
@@ -45,6 +48,7 @@ export function ResultsScreen({ view, onHome }: { view: ResultsView; onHome: () 
             <div className="stat" title="Share of the words she reached that she read right"><span className="label">Completeness</span><b>{azure.completeness}%</b></div>
           </>
         )}
+        {insertions > 0 && <div className="stat" title="Words she said that are not in the story"><span className="label">Added words</span><b>{insertions}</b></div>}
       </div>
       {heardBy && <p className="muted" style={{ fontSize: ".85rem", margin: 0 }}>{heardBy}</p>}
       {view.note && <p className="note">{view.note}</p>}
