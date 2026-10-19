@@ -16,8 +16,13 @@ export interface ReadResult {
   /** Unique missed words (skipped or helped), lowercase, longer than 2 letters. */
   missed: string[];
   helps: number;
+  /** Every word the coach helped with, in order, lowercase (one entry per help, so duplicates are kept). */
+  helped: string[];
   /** Fraction of the passage reached, 0..1. */
   finishedPct: number;
+  /** When she read the first and last word (ms since epoch), or null if she never got going. */
+  startedAt: number | null;
+  endedAt: number | null;
 }
 
 /** Thresholds, in one place so they are easy to tune. */
@@ -56,15 +61,18 @@ export function scoreReading(
   const attempted = Math.max(p, 1);
   let ok = 0;
   const missed: string[] = [];
+  const helped: string[] = [];
   for (let i = 0; i < p; i++) {
     const s = status[i];
+    const w = cleanWord(words[i].disp).toLowerCase();
     if (s === "ok" || s === "soft") ok++;
-    else if (s === "skip" || s === "help") missed.push(cleanWord(words[i].disp).toLowerCase());
+    else if (s === "skip" || s === "help") missed.push(w);
+    if (s === "help") helped.push(w);
   }
   const secs = startT != null && endT != null ? (endT - startT) / 1000 : 0;
   const wcpm = secs >= RULES.minSecondsForWcpm ? Math.round(ok / (secs / 60)) : null;
   const uniqMissed = [...new Set(missed)].filter((w) => w.length > 2);
-  return { ok, attempted, total: n, acc: ok / attempted, wcpm, missed: uniqMissed, helps, finishedPct: n ? p / n : 0 };
+  return { ok, attempted, total: n, acc: ok / attempted, wcpm, missed: uniqMissed, helps, helped, finishedPct: n ? p / n : 0, startedAt: startT, endedAt: endT };
 }
 
 /** 1 for finishing, +1 for accuracy >= 93%, +1 for all questions right. */

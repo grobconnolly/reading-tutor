@@ -1,5 +1,6 @@
 "use client";
 
+import { homeGoalHeading } from "@/lib/reward";
 import type { Reader } from "@/lib/store";
 
 export function HomeScreen({ reader, done, streak, banner, onCheck, onPractice, onTricky, onLogout }: {
@@ -17,10 +18,12 @@ export function HomeScreen({ reader, done, streak, banner, onCheck, onPractice, 
     <section className="stack">
       {banner && <div className="banner">{banner}</div>}
       <div className="card goal">
-        <div className={`bill${won ? " won" : ""}`}>${reader.reward}</div>
+        {reader.rewardKind === "cash"
+          ? <div className={`bill${won ? " won" : ""}`}>${reader.reward}</div>
+          : <div className={`gift${won ? " won" : ""}`} aria-hidden="true"><span className="bow" /><span className="lid" /><span className="box" /></div>}
         <div style={{ minWidth: 0 }}>
           <p className="label">This week&rsquo;s goal</p>
-          <h2>{won ? `Goal reached! You earned $${reader.reward} this week.` : `Read ${reader.goal} stories this week to earn $${reader.reward}`}</h2>
+          <h2>{homeGoalHeading(reader, reader.goal, won)}</h2>
           <div className="dots">
             {Array.from({ length: reader.goal }, (_, i) => (
               <span key={i} className={`dot${i < done ? " on" : ""}`}>{i + 1}</span>

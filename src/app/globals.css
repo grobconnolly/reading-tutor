@@ -50,7 +50,7 @@ button:disabled{opacity:.5;cursor:default}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:22px}
 input[type=text],input[type=password],input[type=number],textarea{width:100%;background:var(--bg);border:1.5px solid var(--line);
   border-radius:10px;padding:.7em .9em}
-.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field{display:flex;flex-direction:column;justify-content:flex-end;gap:6px;min-width:0} /* bottom-aligned so inputs line up when a neighbour's label wraps */
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
 .span-all{grid-column:1/-1}
 .err{color:var(--miss);font-weight:500}
@@ -142,3 +142,20 @@ th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mu
 .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
 .summary .who{font-family:var(--display);font-weight:800;font-size:1.2rem}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+
+/* Prize reward: a wrapped gift drawn from the same tokens as the dollar bill. */
+.gift{width:120px;height:64px;position:relative;flex:none}
+.gift .lid{position:absolute;left:22px;top:16px;width:76px;height:14px;border:2px dashed var(--money);border-radius:4px;background:var(--ok-bg)}
+.gift .box{position:absolute;left:28px;top:30px;width:64px;height:32px;border:2px dashed var(--money);border-top:0;border-radius:0 0 6px 6px;background:var(--ok-bg)}
+.gift .lid::before,.gift .box::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:8px;margin-left:-4px;background:var(--money)}
+.gift .bow{position:absolute;left:46px;top:3px;width:28px;height:14px}
+.gift .bow::before,.gift .bow::after{content:"";position:absolute;top:1px;width:12px;height:12px;border:2px solid var(--money);background:var(--ok-bg);border-radius:50% 50% 50% 0}
+.gift .bow::before{left:1px;transform:rotate(-45deg)}
+.gift .bow::after{right:1px;transform:rotate(45deg) scaleX(-1)}
+.gift.won .lid,.gift.won .box{border-style:solid;background:var(--money)}
+.gift.won .lid::before,.gift.won .box::before{background:var(--surface)}
+.gift.won .bow::before,.gift.won .bow::after{background:var(--money);border-color:var(--money)}
+@media (max-width:420px){.gift{width:100px;height:54px;transform:scale(.85);transform-origin:left center}}
+.radio{display:flex;gap:8px;align-items:center;font-weight:500;cursor:pointer}
+.radio input{width:auto;margin:0}
+.choices{display:flex;flex-direction:column;gap:10px}
