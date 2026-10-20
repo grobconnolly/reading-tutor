@@ -116,6 +116,12 @@ describe("azure detail (milestone 3)", () => {
     expect(parsed.ok && parsed.payload.azure).toBeNull();
     expect(planSessionSave(payload(), { level: 3, weeklyGoal: 5 }, []).session.azure_scores).toBeNull();
   });
+  it("keeps word times when present and rejects nonsense ones", () => {
+    const timed = { ...detail, words: [{ w: "Carlos", s: "miss", a: 6, t: 2.004, d: 0.7 }] };
+    expect(parseAzureDetail(timed)?.words[0]).toEqual({ w: "Carlos", s: "miss", a: 6, t: 2, d: 0.7 });
+    expect(parseAzureDetail({ ...detail, words: [{ w: "Carlos", s: "miss", a: 6, t: -1, d: 0.7 }] })).toBeNull();
+    expect(parseAzureDetail({ ...detail, words: [{ w: "Carlos", s: "miss", a: 6, t: 2 }] })).toBeNull();
+  });
   it("rejects a malformed record", () => {
     expect(parseAzureDetail({ ...detail, listener: "cloud" })).toBeNull();
     expect(parseAzureDetail({ ...detail, scores: { accuracy: 101, fluency: 1, completeness: 1 } })).toBeNull();

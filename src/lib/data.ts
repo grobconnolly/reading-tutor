@@ -142,6 +142,20 @@ export interface PinsBody {
 }
 
 /** Set PINs. The server hashes them and checks the parent/reader PINs are all different. Throws with a message to show. */
+/** Store the audio of a read with its saved session. Errors are the caller's to ignore: a lost recording is no loss of progress. */
+export async function uploadRecording(sessionId: string, blob: Blob, mime: string, seconds: number): Promise<void> {
+  const res = await fetch(`/api/recordings?sessionId=${encodeURIComponent(sessionId)}&seconds=${seconds}`, { method: "POST", headers: { "Content-Type": mime }, body: blob });
+  if (!res.ok) throw new ApiError(res.status, `Recording upload failed (${res.status}).`);
+}
+
+/** A short-lived link to a session's recording, for the parent page. */
+export async function recordingUrl(sessionId: string): Promise<string> {
+  const res = await fetch(`/api/recordings?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+  const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+  if (!res.ok || !data.url) throw new ApiError(res.status, data.error ?? `No recording (${res.status}).`);
+  return data.url;
+}
+
 /** "Forgot PIN?": clears every PIN for the signed-in parent; first-time setup then runs again. */
 export async function resetPins(): Promise<void> {
   await postJson<{ ok: true }>("/api/pins/reset", {});

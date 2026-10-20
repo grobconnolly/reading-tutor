@@ -43,6 +43,13 @@ let tokenFailedAt = 0;
 let coolOffUntil = 0;
 let settled = false;
 let lastError = "";
+let micStream: MediaStream | null = null;
+
+/** A microphone stream to listen through instead of opening the device again, so the same audio can be recorded.
+ *  Pass null to go back to the SDK's own microphone. */
+export function setMicStream(stream: MediaStream | null): void {
+  micStream = stream;
+}
 
 const inBrowser = () => typeof window !== "undefined" || process.env.NODE_ENV === "test";
 
@@ -180,7 +187,9 @@ export class AzureSpeechRecognizer implements SpeechRecognizer {
     if (!m || !t) throw new Error("Azure listening is not ready; call prepareAzure() first");
     const cfg = m.SpeechConfig.fromAuthorizationToken(t.token, t.region);
     cfg.speechRecognitionLanguage = this.lang || "en-US";
-    const rec = new m.SpeechRecognizer(cfg, m.AudioConfig.fromDefaultMicrophoneInput());
+    const audio = micStream && micStream.active ? m.AudioConfig.fromStreamInput(micStream) : m.AudioConfig.fromDefaultMicrophoneInput();
+    const rec = new m.SpeechRecognizer(cfg, audio);
+    const startedAtMs = Date.now();
     if (this.referenceText) {
       new m.PronunciationAssessmentConfig(this.referenceText, m.PronunciationAssessmentGradingSystem.HundredMark, m.PronunciationAssessmentGranularity.Word, true).applyTo(rec);
     }
@@ -192,6 +201,7 @@ export class AzureSpeechRecognizer implements SpeechRecognizer {
       this.sessionUp();
       if (!this.live || r.reason !== m.ResultReason.RecognizedSpeech || !r.text) return;
       const seg = parseAzureJson(r.properties?.getProperty(m.PropertyId.SpeechServiceResponse_JsonResult));
+      if (seg) seg.startedAtMs = startedAtMs;
       const alts = seg?.alternatives.length ? seg.alternatives : [r.text];
       this.emit(true, alts.slice(0, Math.max(1, this.maxAlternatives)), seg);
     };

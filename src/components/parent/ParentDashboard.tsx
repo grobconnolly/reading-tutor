@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, Fragment } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { WcpmChart } from "@/components/parent/WcpmChart";
 import type { AzureDetail } from "@/lib/azureAlign";
 import { useAppState, type AppActions } from "@/hooks/useAppState";
-import { verifyPin } from "@/lib/data";
+import { recordingUrl, verifyPin } from "@/lib/data";
 import { GRADE_FALL_WCPM, gradeLabel, MAX_LEVEL, MIN_LEVEL, ordinalGrade } from "@/lib/passages";
 import { earnedShort, markButton, owedSummary, paidWord, type RewardKind } from "@/lib/reward";
 import { avgAccLast5, countedThisWeek, isValidPin, lastWcpm, owedWeeks, paidWeekList, PARENT_UNLOCK_KEY, streak, trickyWords, type Reader } from "@/lib/store";
@@ -253,22 +253,77 @@ function StatsRow({ reader, onRerunCheck }: { reader: Reader; onRerunCheck: () =
 const LISTENER_LABEL: Record<AzureDetail["listener"], string> = { azure: "Azure", browser: "Safari/Chrome", mixed: "Azure, then Safari/Chrome" };
 const STATUS_LABEL: Record<string, string> = { miss: "misread", skip: "skipped", help: "helped" };
 
-/** What the listener heard for one session: the words that were not read right, with Azure's score, and any words she added. */
-function HeardDetail({ d }: { d: AzureDetail }) {
-  const flagged = d.words.filter((w) => w.s === "miss" || w.s === "skip" || w.s === "help");
+/** Plays slices of a session's recording: one shared audio element per session, fetched on the first tap. */
+function useReadPlayer(sessionId: string, has: boolean) {
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const url = useRef<Promise<string> | null>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const stop = useCallback(() => { audio.current?.pause(); setPlaying(null); }, []);
+  const play = useCallback(async (key: string, from: number, to: number | null) => {
+    if (!has) return;
+    try {
+      url.current ??= recordingUrl(sessionId);
+      const src = await url.current;
+      let a = audio.current;
+      if (!a) { a = new Audio(src); a.preload = "auto"; audio.current = a; }
+      a.pause();
+      a.ontimeupdate = to == null ? null : () => { if (a!.currentTime >= to) { a!.pause(); setPlaying(null); } };
+      a.onended = () => setPlaying(null);
+      a.currentTime = Math.max(0, from);
+      await a.play();
+      setPlaying(key);
+      setErr("");
+    } catch (e) {
+      setPlaying(null);
+      setErr(e instanceof Error ? e.message : "Couldn't play the recording.");
+    }
+  }, [sessionId, has]);
+  return { play, stop, playing, err };
+}
+
+/** A word with a play button when the recording has its time. */
+function WordChip({ w, i, player }: { w: AzureDetail["words"][number]; i: number; player: ReturnType<typeof useReadPlayer> }) {
+  const key = `${i}`;
+  const label = `${w.w}${w.s !== "ok" && STATUS_LABEL[w.s] ? ` (${STATUS_LABEL[w.s]}${w.a != null ? ` ${w.a}` : ""})` : w.a != null ? ` (${w.a})` : ""}`;
+  if (w.t == null) return <span>{label}</span>;
+  const on = player.playing === key;
+  return (
+    <button type="button" className="link" style={{ padding: "0 .2em", textDecoration: "none", color: on ? "var(--accent)" : "inherit" }}
+      title="Hear how she said it" onClick={() => (on ? player.stop() : void player.play(key, w.t! - 0.3, w.t! + (w.d ?? 0.6) + 0.45))}>
+      {on ? "◼" : "▶"} {label}
+    </button>
+  );
+}
+
+/** What the listener heard for one session: the words that were not read right, with Azure's score, any words she
+ *  added, and, when the read was recorded, a play button on each word. */
+function HeardDetail({ d, sessionId }: { d: AzureDetail; sessionId: string }) {
+  const flagged = d.words.map((w, i) => ({ w, i })).filter(({ w }) => w.s === "miss" || w.s === "skip" || w.s === "help");
   const scored = d.words.filter((w) => w.a != null);
-  const lowOk = d.words.filter((w) => w.s === "ok" && w.a != null && w.a < 80);
+  const lowOk = d.words.map((w, i) => ({ w, i })).filter(({ w }) => w.s === "ok" && w.a != null && w.a < 80);
+  const player = useReadPlayer(sessionId, !!d.recording);
+  const list = (xs: { w: AzureDetail["words"][number]; i: number }[]) => xs.map(({ w, i }, k) => <span key={i}>{k ? ", " : ""}<WordChip w={w} i={i} player={player} /></span>);
   return (
     <details className="small muted">
       <summary>
         {d.scores ? `Azure: pronunciation ${d.scores.accuracy}, fluency ${d.scores.fluency}, completeness ${d.scores.completeness}%. ` : "No Azure scores. "}
-        {flagged.length} flagged, {d.inserted.length} added{d.listener === "browser" ? "; words said wrong could not be checked" : ""}.
+        {flagged.length} flagged, {d.inserted.length} added{d.listener === "browser" ? "; words said wrong could not be checked" : ""}{d.recording ? "; recorded" : ""}.
       </summary>
       <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
-        {flagged.length > 0 && <div><b>Flagged:</b> {flagged.map((w, i) => <span key={i}>{i ? ", " : ""}{w.w} ({STATUS_LABEL[w.s]}{w.a != null ? ` ${w.a}` : ""})</span>)}</div>}
+        {flagged.length > 0 && <div><b>Flagged:</b> {list(flagged)}</div>}
         {d.inserted.length > 0 && <div><b>Added words:</b> {d.inserted.join(", ")}</div>}
-        {lowOk.length > 0 && <div><b>Passed with a low score (under 80):</b> {lowOk.map((w, i) => <span key={i}>{i ? ", " : ""}{w.w} ({w.a})</span>)}</div>}
+        {lowOk.length > 0 && <div><b>Passed with a low score (under 80):</b> {list(lowOk)}</div>}
         {scored.length > 0 && <div>{scored.length} words scored by Azure, median {median(scored.map((w) => w.a as number))}.</div>}
+        {d.recording ? (
+          <div>
+            <button type="button" className="link" style={{ padding: 0 }} onClick={() => (player.playing === "all" ? player.stop() : void player.play("all", 0, null))}>
+              {player.playing === "all" ? "◼ Stop" : "▶ Play the whole read"}{d.recording.seconds ? ` (${Math.round(d.recording.seconds)} s)` : ""}
+            </button>
+            <span> · tap a word above to hear just that word · recordings are kept for 30 days</span>
+            {player.err && <span className="err"> {player.err}</span>}
+          </div>
+        ) : d.listener !== "browser" && <div>No recording for this read.</div>}
       </div>
     </details>
   );
@@ -305,7 +360,7 @@ function SessionsTable({ reader }: { reader: Reader }) {
                 </tr>
                 {s.azure && (
                   <tr>
-                    <td colSpan={8} style={{ paddingTop: 0 }}><HeardDetail d={s.azure} /></td>
+                    <td colSpan={8} style={{ paddingTop: 0 }}><HeardDetail d={s.azure} sessionId={s.id} /></td>
                   </tr>
                 )}
               </Fragment>

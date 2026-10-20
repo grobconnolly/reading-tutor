@@ -175,6 +175,7 @@ export function parseSessionPayload(body: unknown): Parsed {
 const LISTENERS = new Set(["azure", "browser", "mixed"]);
 const STATUSES = new Set(["todo", "ok", "soft", "skip", "help", "miss"]);
 const score = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100 ? Math.round(v) : null;
+const secs = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 36000 ? Math.round(v * 100) / 100 : null;
 
 /** Validate the per-word record from the browser; null when it is not what the reading screen sends. */
 export function parseAzureDetail(v: unknown): AzureDetail | null {
@@ -197,7 +198,14 @@ export function parseAzureDetail(v: unknown): AzureDetail | null {
     if (typeof w.w !== "string" || w.w.length > 40 || typeof w.s !== "string" || !STATUSES.has(w.s)) return null;
     const a = w.a == null ? null : score(w.a);
     if (w.a != null && a == null) return null;
-    words.push({ w: w.w, s: w.s as AzureDetail["words"][number]["s"], a });
+    const out: AzureDetail["words"][number] = { w: w.w, s: w.s as AzureDetail["words"][number]["s"], a };
+    if (w.t != null || w.d != null) {
+      const t = secs(w.t), d = secs(w.d);
+      if (t == null || d == null) return null;
+      out.t = t;
+      out.d = d;
+    }
+    words.push(out);
   }
   return { listener: d.listener as AzureDetail["listener"], scores, inserted: d.inserted as string[], words };
 }

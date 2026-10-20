@@ -17,7 +17,7 @@ function seg(words: W[], extra: Partial<AzureSegment> = {}): AzureSegment {
 
 function state(text: string): AzureAlignState & { words: ReadWord[] } {
   const words = toReadWords(text);
-  return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), inserted: [] };
+  return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), azureTime: words.map(() => null), inserted: [] };
 }
 
 describe("parseAzureJson", () => {
@@ -260,6 +260,20 @@ describe("word practice", () => {
     expect(practicePassed({ alts: ["volcano"], accuracy: AZURE_RULES.practicePass - 1 }, "volcano")).toBe(false);
     expect(practicePassed({ alts: ["a vol cano"], accuracy: null }, "volcano")).toBe(true);
     expect(practicePassed({ alts: ["banana"], accuracy: null }, "volcano")).toBe(false);
+  });
+});
+
+describe("word times on the recording's clock", () => {
+  it("places each heard word in seconds from when recording began, joins included", () => {
+    const st = state("Carlos was the youngest player.");
+    const s = seg([["car", "None", 70], ["los", "None", 80], ["was"], ["the"], ["player"]]);
+    s.startedAtMs = 10_000; // the recognizer session's audio began 2 s into the recording
+    applyAzureSegment(st, s);
+    const d = buildAzureDetail(st, null, "azure", 8_000);
+    expect(d.words.map((w) => [w.w, w.t, w.d])).toEqual([
+      ["Carlos", 2, 0.7], ["was", 2.8, 0.3], ["the", 3.2, 0.3], ["youngest", undefined, undefined], ["player.", 3.6, 0.3],
+    ]);
+    expect(buildAzureDetail(st, null, "azure").words.every((w) => w.t == null)).toBe(true);
   });
 });
 

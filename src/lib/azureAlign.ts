@@ -44,6 +44,8 @@ export interface AzureSegment {
   completeness: number;
   pronunciation: number;
   durationMs: number;
+  /** Epoch ms when this recognizer session's audio began; word offsets are relative to it. Set by the recognizer. */
+  startedAtMs?: number;
 }
 
 /** Whole-session scores, 0..100 each, as the spec's azure_scores. */
@@ -98,8 +100,18 @@ export function parseAzureJson(raw: string | null | undefined): AzureSegment | n
 /** The reading state plus Azure's per-word accuracy (null until Azure heard that word) and the words she added. */
 export interface AzureAlignState extends AlignState {
   azureAcc: (number | null)[];
+  /** When she said each word: epoch ms and length in ms, from Azure's offsets; null when unknown. */
+  azureTime: ({ at: number; d: number } | null)[];
   /** Words she said that have no place in the story (insertions), in the order heard. Errors, but not practice words. */
   inserted: string[];
+}
+
+type WordTime = { at: number; d: number } | null;
+
+/** When the heard words from `a` to `b` (inclusive) were said, on the wall clock. */
+function timeOf(seg: AzureSegment, a: AzureWord, b: AzureWord = a): WordTime {
+  if (seg.startedAtMs == null) return null;
+  return { at: seg.startedAtMs + a.offsetMs, d: Math.max(0, b.offsetMs + b.durationMs - a.offsetMs) };
 }
 
 const spoken = (w: AzureWord) => w.errorType !== "Omission" && w.errorType !== "Insertion";
@@ -118,10 +130,11 @@ const JUMP_SCAN = 40;
  * returns the story's own spelling for a word read right, so a match that only works through the matcher's plural or
  * spelling slack ("jumps" for "jump") means she said a different word, whatever the score.
  */
-function settle(st: AzureAlignState, tok: string, accuracy: number, bad: boolean): void {
+function settle(st: AzureAlignState, tok: string, accuracy: number, bad: boolean, time: WordTime = null): void {
   const j = st.p - 1;
   if (bad || !sameWord(tok, st.words[j].norm)) st.status[j] = "miss";
   st.azureAcc[j] = accuracy;
+  if (time) st.azureTime[j] = time;
 }
 
 /** She said these words right before a match that jumped story words: pair them up as substitutions ("saw" for
@@ -202,7 +215,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
     if (!tok) continue;
     const bad = misread(w);
     const before = st.p;
-    if (advance(st, tok)) { settle(st, tok, w.accuracy, bad); placed(before); omitted = 0; continue; }
+    if (advance(st, tok)) { settle(st, tok, w.accuracy, bad, timeOf(seg, w)); placed(before); omitted = 0; continue; }
     // Azure tagged k reference words omitted right before this one: trust it past the window if the word fits there.
     if (omitted > 0 && omitted <= AZURE_RULES.maxOmissionJump) {
       const k = st.p + omitted;
@@ -210,7 +223,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
         for (let x = st.p; x < k; x++) if (st.status[x] === "todo") st.status[x] = SMALL.has(st.words[x].norm) ? "soft" : "skip";
         st.status[k] = "ok";
         st.p = k + 1;
-        settle(st, tok, w.accuracy, bad);
+        settle(st, tok, w.accuracy, bad, timeOf(seg, w));
         placed(before);
         omitted = 0;
         continue;
@@ -221,13 +234,13 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
     const n1 = ws[i + 1] && spoken(ws[i + 1]) ? ws[i + 1] : null;
     const n2 = n1 && ws[i + 2] && spoken(ws[i + 2]) ? ws[i + 2] : null;
     if (n1 && advance(st, tok + norm(n1.word))) {
-      settle(st, tok + norm(n1.word), (w.accuracy + n1.accuracy) / 2, bad || misread(n1));
+      settle(st, tok + norm(n1.word), (w.accuracy + n1.accuracy) / 2, bad || misread(n1), timeOf(seg, w, n1));
       placed(before);
       i += 1;
       continue;
     }
     if (n1 && n2 && advance(st, tok + norm(n1.word) + norm(n2.word))) {
-      settle(st, tok + norm(n1.word) + norm(n2.word), (w.accuracy + n1.accuracy + n2.accuracy) / 3, bad || misread(n1) || misread(n2));
+      settle(st, tok + norm(n1.word) + norm(n2.word), (w.accuracy + n1.accuracy + n2.accuracy) / 3, bad || misread(n1) || misread(n2), timeOf(seg, w, n2));
       placed(before);
       i += 2;
       continue;
@@ -237,6 +250,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
     if (a && b && a.norm.length >= 2 && b.norm.length >= 2 && wordMatch(tok, a.norm + b.norm)) {
       st.status[st.p] = st.status[st.p + 1] = bad || !sameWord(tok, a.norm + b.norm) ? "miss" : "ok";
       st.azureAcc[st.p] = st.azureAcc[st.p + 1] = w.accuracy;
+      st.azureTime[st.p] = st.azureTime[st.p + 1] = timeOf(seg, w);
       st.p += 2;
       resolvePending(st, pending, before, before);
       continue;
@@ -248,7 +262,7 @@ export function applyAzureSegment(st: AzureAlignState, seg: AzureSegment): numbe
       for (let x = st.p; x < k; x++) if (st.status[x] === "todo") st.status[x] = SMALL.has(st.words[x].norm) ? "soft" : "skip";
       st.status[k] = "ok";
       st.p = k + 1;
-      settle(st, tok, w.accuracy, bad);
+      settle(st, tok, w.accuracy, bad, timeOf(seg, w));
       pending.length = 0;
       continue;
     }
@@ -302,6 +316,16 @@ export interface AzureWordDetail {
   s: WordStatus;
   /** Azure's accuracy for it, null when unscored (small word dropped, matched from pieces, or the browser listened). */
   a: number | null;
+  /** Seconds into the recording when she said it, and how long it took; absent without a recording or timing. */
+  t?: number;
+  d?: number;
+}
+
+export interface RecordingRef {
+  /** Object path in the private "reads" bucket. */
+  path: string;
+  mime: string;
+  seconds?: number;
 }
 
 /** Saved as sessions.azure_scores: enough to see afterwards what was heard and tune the thresholds on real reads. */
@@ -312,11 +336,22 @@ export interface AzureDetail {
   inserted: string[];
   /** Every story word she reached, with its status and score. */
   words: AzureWordDetail[];
+  /** The read's audio, added by the upload route once it is stored. */
+  recording?: RecordingRef;
 }
 
-export function buildAzureDetail(st: AzureAlignState & { words: { disp: string }[] }, scores: AzureScores | null, listener: AzureDetail["listener"]): AzureDetail {
+/** `recStartMs`: epoch ms when the recording began, so each word gets a time on the recording's clock. */
+export function buildAzureDetail(st: AzureAlignState & { words: { disp: string }[] }, scores: AzureScores | null, listener: AzureDetail["listener"], recStartMs?: number | null): AzureDetail {
   const words: AzureWordDetail[] = [];
-  for (let i = 0; i < st.p && i < st.words.length; i++) words.push({ w: st.words[i].disp, s: st.status[i], a: st.azureAcc[i] });
+  for (let i = 0; i < st.p && i < st.words.length; i++) {
+    const w: AzureWordDetail = { w: st.words[i].disp, s: st.status[i], a: st.azureAcc[i] };
+    const tm = st.azureTime[i];
+    if (recStartMs != null && tm && tm.at >= recStartMs) {
+      w.t = Math.round((tm.at - recStartMs) / 10) / 100;
+      w.d = Math.round(tm.d / 10) / 100;
+    }
+    words.push(w);
+  }
   return { listener, scores, inserted: st.inserted.slice(), words };
 }
 

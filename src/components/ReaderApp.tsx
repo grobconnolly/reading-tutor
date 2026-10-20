@@ -12,7 +12,7 @@ import { SetupScreen, type SetupData } from "@/components/screens/SetupScreen";
 import { WordPracticeScreen } from "@/components/screens/WordPracticeScreen";
 import { useAppState } from "@/hooks/useAppState";
 import { useCoach } from "@/hooks/useCoach";
-import { errorMessage, resetPins, verifyPin } from "@/lib/data";
+import { errorMessage, resetPins, uploadRecording, verifyPin } from "@/lib/data";
 import { checkPassageFor, type Passage } from "@/lib/passages";
 import { alreadyEarnedGreeting, goalHitLine, moreStoriesLine } from "@/lib/reward";
 import { checkPassed, nextCheckLevel, RULES, type CheckState, type ReadResult } from "@/lib/scoring";
@@ -226,6 +226,11 @@ export function ReaderApp() {
     };
     // Saves the session, bumps trouble words, recomputes the level and the reward week on the server.
     const res = await saveSession(payload, { title: p.title, level: p.level });
+    if (res.saved && r.recording) {
+      const rec = r.recording;
+      r.recording = undefined;
+      uploadRecording(res.sessionId, rec.blob, rec.mime, rec.seconds).catch(() => { /* the read is saved; the audio is a bonus */ });
+    }
     const note = res.saved ? null : UNSAVED_NOTE;
     const stats = { stars: res.stars, wcpm: r.wcpm, acc: Math.round(r.acc * 100), comp, compTotal, note };
     const levelMsg: "up" | "down" | "" = res.level > res.levelBefore ? "up" : res.level < res.levelBefore ? "down" : "";

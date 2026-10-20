@@ -32,6 +32,8 @@ export interface ReadResult {
   insertions?: number;
   /** Everything heard, per word, for the session row (sessions.azure_scores) and the parent page. */
   azureDetail?: AzureDetail;
+  /** The read's audio (Azure path only), uploaded once the session is saved. */
+  recording?: { blob: Blob; mime: string; seconds: number };
 }
 
 /** "mixed" when Azure dropped out mid-story and the browser recognizer finished it. */

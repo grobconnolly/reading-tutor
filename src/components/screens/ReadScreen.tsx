@@ -5,6 +5,7 @@ import type { Coach } from "@/hooks/useCoach";
 import type { Passage } from "@/lib/passages";
 import { applyAzureSegment, AZURE_RULES, buildAzureDetail, rememberAzureScores, summarizeAzure, type AzureAlignState, type AzureSegmentStat } from "@/lib/azureAlign";
 import { RULES, scoreReading, type ReadResult } from "@/lib/scoring";
+import { canRecord, startRecording, type ReadRecorder } from "@/lib/recorder";
 import { getSR, hasSR, listeningEngine, listeningStatus, MIC_BLOCKED_MSG, prepareListening, type ListenEngine, type SpeechRecognizer, type SRResult } from "@/lib/speech";
 import { advanceTokens, cleanWord, toReadWords, tokenize, type AlignState, type ReadWord, type WordStatus } from "@/lib/words";
 
@@ -41,7 +42,7 @@ function sentenceIndexes(words: ReadWord[]): number[] {
 
 function freshEngine(words: ReadWord[]): Engine {
   return {
-    words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), inserted: [], startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "", azureSegs: [], listeners: new Set(),
+    words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), azureTime: words.map(() => null), inserted: [], startT: null, endT: null, lastProg: 0, active: false, paused: false, nudged: false, openedAt: 0, helps: [], pendingInterim: "", azureSegs: [], listeners: new Set(),
     sentenceOf: sentenceIndexes(words), curSentence: 0, insertedSeen: 0, insertedInSentence: 0, nudgedSentence: -1,
   };
 }
@@ -128,6 +129,14 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
   onFinishRef.current = onFinish;
   /** Set once startRec exists: the added-words nudge pauses the mic, speaks, and starts it again. */
   const nudgeRef = useRef<() => Promise<void>>(async () => {});
+  /** The read's audio, captured while Azure listens so the parent can hear how each word was said. */
+  const recorder = useRef<ReadRecorder | null>(null);
+
+  const stopRecording = useCallback(async () => {
+    const r = recorder.current;
+    recorder.current = null;
+    return r ? r.stop() : null;
+  }, []);
 
   const render = useCallback((pv?: AlignState) => {
     const st = pv ?? eng.current;
@@ -159,10 +168,18 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     const azure = summarizeAzure(R, R.azureSegs);
     if (azure) result.azure = azure;
     if (R.listeners.size) result.listener = R.listeners.size > 1 ? "mixed" : R.listeners.has("azure") ? "azure" : "browser";
-    result.azureDetail = buildAzureDetail(R, azure, result.listener ?? "browser");
+    const recStartMs = recorder.current?.startedAtMs ?? null;
+    result.azureDetail = buildAzureDetail(R, azure, result.listener ?? "browser", recStartMs);
     rememberAzureScores(azure, result.listener, R.inserted.length);
-    onFinishRef.current(result);
-  }, [stopRec, clearTicker, render]);
+    // The recording stops asynchronously; the results wait the few milliseconds it takes.
+    void stopRecording().then((rec) => {
+      if (rec) {
+        result.recording = rec;
+        console.info(`[reading-coach] recorded ${rec.seconds} s (${Math.round(rec.blob.size / 1024)} KB, ${rec.mime}), ${result.azureDetail?.words.filter((w) => w.t != null).length ?? 0} words timed`);
+      }
+      onFinishRef.current(result);
+    });
+  }, [stopRec, clearTicker, render, stopRecording]);
 
   /** Stop listening and explain why, leaving her on the story so she can tap Start reading again. */
   const stopWithMessage = useCallback((msg: string) => {
@@ -303,6 +320,7 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     coachRef.current.say(intro);
     return () => {
       stopRec();
+      void stopRecording();
       clearTicker();
       if (modelTimer.current != null) window.clearTimeout(modelTimer.current);
       eng.current.active = false;
@@ -324,13 +342,22 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     setReading(true);
     coachRef.current.bubble("I'm listening. Start with the first word.");
     render();
-    startRec();
+    if (listeningEngine() === "azure" && canRecord()) {
+      // Open the mic here, inside the tap, and let Azure listen through the same stream while it is recorded.
+      startRecording()
+        .then((rec) => { recorder.current = rec; })
+        .catch(() => { /* no recording, listen anyway */ })
+        .then(() => { if (eng.current.active) startRec(); });
+    } else {
+      startRec();
+    }
     clearTicker();
     ticker.current = window.setInterval(() => { void tick(); }, 400);
   }
 
   function onRestart() {
     stopRec();
+    void stopRecording();
     clearTicker();
     eng.current = freshEngine(words);
     finished.current = false;
@@ -341,6 +368,7 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
 
   function onQuitClick() {
     stopRec();
+    void stopRecording();
     clearTicker();
     eng.current.active = false;
     onQuit();
