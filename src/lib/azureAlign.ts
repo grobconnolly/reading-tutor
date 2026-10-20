@@ -102,6 +102,8 @@ export interface AzureAlignState extends AlignState {
   azureAcc: (number | null)[];
   /** When she said each word: epoch ms and length in ms, from Azure's offsets; null when unknown. */
   azureTime: ({ at: number; d: number } | null)[];
+  /** What Azure returned for each story word, normalized; set when it is not the story word itself. */
+  azureHeard?: (string | null)[];
   /** Words she said that have no place in the story (insertions), in the order heard. Errors, but not practice words. */
   inserted: string[];
 }
@@ -135,6 +137,7 @@ function settle(st: AzureAlignState, tok: string, accuracy: number, bad: boolean
   if (bad || !sameWord(tok, st.words[j].norm)) st.status[j] = "miss";
   st.azureAcc[j] = accuracy;
   if (time) st.azureTime[j] = time;
+  if (tok !== st.words[j].norm) (st.azureHeard ??= [])[j] = tok;
 }
 
 /** She said these words right before a match that jumped story words: pair them up as substitutions ("saw" for
@@ -319,6 +322,8 @@ export interface AzureWordDetail {
   /** Seconds into the recording when she said it, and how long it took; absent without a recording or timing. */
   t?: number;
   d?: number;
+  /** What Azure heard, when it was not the story word itself (so a flag can be checked afterwards). */
+  h?: string;
 }
 
 export interface RecordingRef {
@@ -345,6 +350,8 @@ export function buildAzureDetail(st: AzureAlignState & { words: { disp: string }
   const words: AzureWordDetail[] = [];
   for (let i = 0; i < st.p && i < st.words.length; i++) {
     const w: AzureWordDetail = { w: st.words[i].disp, s: st.status[i], a: st.azureAcc[i] };
+    const h = st.azureHeard?.[i];
+    if (h) w.h = h;
     const tm = st.azureTime[i];
     if (recStartMs != null && tm && tm.at >= recStartMs) {
       w.t = Math.round((tm.at - recStartMs) / 10) / 100;

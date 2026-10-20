@@ -285,7 +285,8 @@ function useReadPlayer(sessionId: string, has: boolean) {
 /** A word with a play button when the recording has its time. */
 function WordChip({ w, i, player }: { w: AzureDetail["words"][number]; i: number; player: ReturnType<typeof useReadPlayer> }) {
   const key = `${i}`;
-  const label = `${w.w}${w.s !== "ok" && STATUS_LABEL[w.s] ? ` (${STATUS_LABEL[w.s]}${w.a != null ? ` ${w.a}` : ""})` : w.a != null ? ` (${w.a})` : ""}`;
+  const heard = w.h ? `, heard "${w.h}"` : "";
+  const label = `${w.w}${w.s !== "ok" && STATUS_LABEL[w.s] ? ` (${STATUS_LABEL[w.s]}${w.a != null ? ` ${w.a}` : ""}${heard})` : w.a != null ? ` (${w.a}${heard})` : ""}`;
   if (w.t == null) return <span>{label}</span>;
   const on = player.playing === key;
   return (

@@ -178,6 +178,10 @@ describe("applyAzureSegment: words she added or swapped (Rob's iPad cases)", () 
     expect(st.status).toEqual(["ok", "ok", "ok", "miss", "ok", "miss", "ok", "ok", "ok", "ok", "miss"]);
     expect(st.inserted).toEqual([]);
     expect(st.azureAcc[5]).toBe(63);
+    const d = buildAzureDetail(st, null, "azure");
+    expect(d.words[5]).toMatchObject({ w: "jump.", s: "miss", h: "jumps" });
+    expect(d.words[10]).toMatchObject({ w: "park.", h: "parks" });
+    expect(d.words[0].h).toBeUndefined();
   });
   it("still accepts numbers and homophones as the same word", () => {
     const st = state("Strike one! Watch the ball all the way to the bat.");

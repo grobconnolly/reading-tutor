@@ -205,6 +205,10 @@ export function parseAzureDetail(v: unknown): AzureDetail | null {
       out.t = t;
       out.d = d;
     }
+    if (w.h != null) {
+      if (typeof w.h !== "string" || w.h.length > 60) return null;
+      out.h = w.h;
+    }
     words.push(out);
   }
   return { listener: d.listener as AzureDetail["listener"], scores, inserted: d.inserted as string[], words };
