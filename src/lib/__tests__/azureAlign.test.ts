@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyAzureSegment, AZURE_RULES, lastAzureScores, lastInsertions, lastListener, listenerNote, parseAzureJson, practicePassed, rememberAzureScores, summarizeAzure, wordAccuracy,
+  applyAzureSegment, AZURE_RULES, buildAzureDetail, lastAzureScores, lastInsertions, lastListener, listenerNote, parseAzureJson, practicePassed, rememberAzureScores, summarizeAzure, wordAccuracy,
   type AzureAlignState, type AzureErrorType, type AzureSegment, type AzureWord,
 } from "../azureAlign";
-import { toReadWords } from "../words";
+import { toReadWords, type ReadWord } from "../words";
 
 /** [word, errorType, accuracy] in Azure's order; continuous mode never sends Omission or Insertion, single-shot does. */
 type W = [string, AzureErrorType?, number?];
@@ -15,7 +15,7 @@ function seg(words: W[], extra: Partial<AzureSegment> = {}): AzureSegment {
   return { text: ws.filter((w) => w.errorType !== "Omission").map((w) => w.word).join(" "), alternatives: [], words: ws, accuracy: 90, fluency: 85, completeness: 100, pronunciation: 88, durationMs: 400 * ws.length, ...extra };
 }
 
-function state(text: string): AzureAlignState {
+function state(text: string): AzureAlignState & { words: ReadWord[] } {
   const words = toReadWords(text);
   return { words, status: words.map(() => "todo"), p: 0, azureAcc: words.map(() => null), inserted: [] };
 }
@@ -260,6 +260,21 @@ describe("word practice", () => {
     expect(practicePassed({ alts: ["volcano"], accuracy: AZURE_RULES.practicePass - 1 }, "volcano")).toBe(false);
     expect(practicePassed({ alts: ["a vol cano"], accuracy: null }, "volcano")).toBe(true);
     expect(practicePassed({ alts: ["banana"], accuracy: null }, "volcano")).toBe(false);
+  });
+});
+
+describe("buildAzureDetail", () => {
+  it("records every reached word with its status and score, plus the added words", () => {
+    const st = state("Carlos was the youngest player.");
+    applyAzureSegment(st, seg([["carlos", "Mispronunciation", 6], ["was"], ["the"], ["player"]]));
+    st.inserted.push("um");
+    const d = buildAzureDetail(st, { accuracy: 80, fluency: 90, completeness: 75 }, "azure");
+    expect(d.listener).toBe("azure");
+    expect(d.scores).toEqual({ accuracy: 80, fluency: 90, completeness: 75 });
+    expect(d.inserted).toEqual(["um"]);
+    expect(d.words).toEqual([
+      { w: "Carlos", s: "miss", a: 6 }, { w: "was", s: "ok", a: 95 }, { w: "the", s: "ok", a: 95 }, { w: "youngest", s: "skip", a: null }, { w: "player.", s: "ok", a: 95 },
+    ]);
   });
 });
 

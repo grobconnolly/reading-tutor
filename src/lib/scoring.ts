@@ -1,7 +1,7 @@
 /* Accuracy, WCPM, stars, leveling and reading-check routing. Pure functions; unit-tested. */
 
 import { MAX_LEVEL, MIN_LEVEL } from "./passages";
-import type { AzureScores } from "./azureAlign";
+import type { AzureDetail, AzureScores } from "./azureAlign";
 import { cleanWord, type ReadWord, type WordStatus } from "./words";
 
 export interface ReadResult {
@@ -30,6 +30,8 @@ export interface ReadResult {
   listener?: Listener;
   /** Words she said that are not in the story (Azure only; the browser recognizer cannot tell). Errors, but not practice words. */
   insertions?: number;
+  /** Everything heard, per word, for the session row (sessions.azure_scores) and the parent page. */
+  azureDetail?: AzureDetail;
 }
 
 /** "mixed" when Azure dropped out mid-story and the browser recognizer finished it. */

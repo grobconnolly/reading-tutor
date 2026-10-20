@@ -7,7 +7,7 @@
  * a per-word score that flags a word she said but got wrong ("miss"). Single-utterance assessments (word practice)
  * do carry Omission/Insertion tags, and those are handled too. */
 
-import { advance, advanceTokens, norm, sameWord, SMALL, transcriptHasWord, wordMatch, type AlignState } from "./words";
+import { advance, advanceTokens, norm, sameWord, SMALL, transcriptHasWord, wordMatch, type AlignState, type WordStatus } from "./words";
 
 /** Thresholds, in one place so they are easy to tune. */
 export const AZURE_RULES = {
@@ -292,6 +292,32 @@ export function summarizeAzure(st: AzureAlignState, segs: AzureSegmentStat[]): A
     fluency: Math.round(fluency),
     completeness: Math.round(attempted ? Math.min(100, (100 * right) / attempted) : 0),
   };
+}
+
+/* ---------- what gets saved with the session ---------- */
+
+export interface AzureWordDetail {
+  /** The story word as displayed. */
+  w: string;
+  s: WordStatus;
+  /** Azure's accuracy for it, null when unscored (small word dropped, matched from pieces, or the browser listened). */
+  a: number | null;
+}
+
+/** Saved as sessions.azure_scores: enough to see afterwards what was heard and tune the thresholds on real reads. */
+export interface AzureDetail {
+  listener: "azure" | "browser" | "mixed";
+  scores: AzureScores | null;
+  /** Words she said that are not in the story. */
+  inserted: string[];
+  /** Every story word she reached, with its status and score. */
+  words: AzureWordDetail[];
+}
+
+export function buildAzureDetail(st: AzureAlignState & { words: { disp: string }[] }, scores: AzureScores | null, listener: AzureDetail["listener"]): AzureDetail {
+  const words: AzureWordDetail[] = [];
+  for (let i = 0; i < st.p && i < st.words.length; i++) words.push({ w: st.words[i].disp, s: st.status[i], a: st.azureAcc[i] });
+  return { listener, scores, inserted: st.inserted.slice(), words };
 }
 
 /* ---------- word practice ---------- */

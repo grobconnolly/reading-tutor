@@ -3,6 +3,7 @@
  * the rules are unit-tested. The same planner runs in the browser as a fallback when the save fails.
  */
 
+import type { AzureDetail } from "./azureAlign";
 import { checkFinalLevel, nextLevelAfterPractice, sessionCounts, starsFor } from "./scoring";
 import type { Baseline } from "./store";
 import { weekKey } from "./time";
@@ -39,6 +40,8 @@ export interface SessionPayload {
   /** 0..1 */
   finishedPct: number;
   check?: CheckOutcome;
+  /** What the listener heard, per word (milestone 3); saved as sessions.azure_scores. */
+  azure?: AzureDetail | null;
 }
 
 export interface SessionInsert {
@@ -56,6 +59,7 @@ export interface SessionInsert {
   comp_total: number;
   helped_words: string[];
   missed_words: string[];
+  azure_scores: AzureDetail | null;
   counts_for_goal: boolean;
   stars: number;
 }
@@ -152,13 +156,50 @@ export function parseSessionPayload(body: unknown): Parsed {
   }
   if (mode === "check" && !check) return bad("A check session needs a check outcome.");
 
+  let azure: AzureDetail | null = null;
+  if (b["azure"] != null) {
+    const a = parseAzureDetail(b["azure"]);
+    if (!a) return bad("azure must describe the listener, scores, inserted words and words.");
+    azure = a;
+  }
+
   return {
     ok: true,
     payload: {
       readerId, mode, passageId, startedAt, endedAt, wordsTotal, wordsAttempted, wordsCorrect, accuracy, wcpm,
-      compRight, compTotal, helpedWords, missedWords, wonWords, finishedPct, check,
+      compRight, compTotal, helpedWords, missedWords, wonWords, finishedPct, check, azure,
     },
   };
+}
+
+const LISTENERS = new Set(["azure", "browser", "mixed"]);
+const STATUSES = new Set(["todo", "ok", "soft", "skip", "help", "miss"]);
+const score = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100 ? Math.round(v) : null;
+
+/** Validate the per-word record from the browser; null when it is not what the reading screen sends. */
+export function parseAzureDetail(v: unknown): AzureDetail | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const d = v as Record<string, unknown>;
+  if (typeof d.listener !== "string" || !LISTENERS.has(d.listener)) return null;
+  let scores: AzureDetail["scores"] = null;
+  if (d.scores != null) {
+    const s = d.scores as Record<string, unknown>;
+    const accuracy = score(s.accuracy), fluency = score(s.fluency), completeness = score(s.completeness);
+    if (accuracy == null || fluency == null || completeness == null) return null;
+    scores = { accuracy, fluency, completeness };
+  }
+  if (!Array.isArray(d.inserted) || d.inserted.length > 500 || !d.inserted.every((x) => typeof x === "string" && x.length <= 40)) return null;
+  if (!Array.isArray(d.words) || d.words.length > 2000) return null;
+  const words: AzureDetail["words"] = [];
+  for (const x of d.words) {
+    if (!x || typeof x !== "object") return null;
+    const w = x as Record<string, unknown>;
+    if (typeof w.w !== "string" || w.w.length > 40 || typeof w.s !== "string" || !STATUSES.has(w.s)) return null;
+    const a = w.a == null ? null : score(w.a);
+    if (w.a != null && a == null) return null;
+    words.push({ w: w.w, s: w.s as AzureDetail["words"][number]["s"], a });
+  }
+  return { listener: d.listener as AzureDetail["listener"], scores, inserted: d.inserted as string[], words };
 }
 
 /**
@@ -197,6 +238,7 @@ export function planSessionSave(p: SessionPayload, reader: { level: number; week
     comp_total: p.compTotal,
     helped_words: p.helpedWords,
     missed_words: p.missedWords,
+    azure_scores: p.azure ?? null,
     counts_for_goal: counts,
     stars,
   };

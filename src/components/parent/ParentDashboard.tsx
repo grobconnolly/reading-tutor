@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { WcpmChart } from "@/components/parent/WcpmChart";
+import type { AzureDetail } from "@/lib/azureAlign";
 import { useAppState, type AppActions } from "@/hooks/useAppState";
 import { verifyPin } from "@/lib/data";
 import { GRADE_FALL_WCPM, gradeLabel, MAX_LEVEL, MIN_LEVEL, ordinalGrade } from "@/lib/passages";
@@ -249,6 +250,36 @@ function StatsRow({ reader, onRerunCheck }: { reader: Reader; onRerunCheck: () =
   );
 }
 
+const LISTENER_LABEL: Record<AzureDetail["listener"], string> = { azure: "Azure", browser: "Safari/Chrome", mixed: "Azure, then Safari/Chrome" };
+const STATUS_LABEL: Record<string, string> = { miss: "misread", skip: "skipped", help: "helped" };
+
+/** What the listener heard for one session: the words that were not read right, with Azure's score, and any words she added. */
+function HeardDetail({ d }: { d: AzureDetail }) {
+  const flagged = d.words.filter((w) => w.s === "miss" || w.s === "skip" || w.s === "help");
+  const scored = d.words.filter((w) => w.a != null);
+  const lowOk = d.words.filter((w) => w.s === "ok" && w.a != null && w.a < 80);
+  return (
+    <details className="small muted">
+      <summary>
+        {d.scores ? `Azure: pronunciation ${d.scores.accuracy}, fluency ${d.scores.fluency}, completeness ${d.scores.completeness}%. ` : "No Azure scores. "}
+        {flagged.length} flagged, {d.inserted.length} added{d.listener === "browser" ? "; words said wrong could not be checked" : ""}.
+      </summary>
+      <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+        {flagged.length > 0 && <div><b>Flagged:</b> {flagged.map((w, i) => <span key={i}>{i ? ", " : ""}{w.w} ({STATUS_LABEL[w.s]}{w.a != null ? ` ${w.a}` : ""})</span>)}</div>}
+        {d.inserted.length > 0 && <div><b>Added words:</b> {d.inserted.join(", ")}</div>}
+        {lowOk.length > 0 && <div><b>Passed with a low score (under 80):</b> {lowOk.map((w, i) => <span key={i}>{i ? ", " : ""}{w.w} ({w.a})</span>)}</div>}
+        {scored.length > 0 && <div>{scored.length} words scored by Azure, median {median(scored.map((w) => w.a as number))}.</div>}
+      </div>
+    </details>
+  );
+}
+
+function median(xs: number[]): number {
+  const s = xs.slice().sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+}
+
 function SessionsTable({ reader }: { reader: Reader }) {
   const rows = reader.sessions.slice().reverse().slice(0, 40);
   return (
@@ -257,20 +288,28 @@ function SessionsTable({ reader }: { reader: Reader }) {
       <div className="scroll" style={{ marginTop: 10 }}>
         <table>
           <thead>
-            <tr><th>Date</th><th>Story</th><th>Level</th><th>Words/min</th><th>Accuracy</th><th>Questions</th><th>Helped</th></tr>
+            <tr><th>Date</th><th>Story</th><th>Level</th><th>Words/min</th><th>Accuracy</th><th>Questions</th><th>Helped</th><th>Heard by</th></tr>
           </thead>
           <tbody>
             {rows.length ? rows.map((s) => (
-              <tr key={s.id}>
-                <td>{fmtDate(s.date)}</td>
-                <td>{s.title}{s.mode === "check" ? " (check)" : ""}</td>
-                <td>{gradeLabel(s.level)}</td>
-                <td>{s.wcpm ?? "–"}</td>
-                <td>{s.acc}%</td>
-                <td>{s.comp}/{s.compTotal}</td>
-                <td>{s.helps}</td>
-              </tr>
-            )) : <tr><td colSpan={7} className="muted">No sessions yet.</td></tr>}
+              <Fragment key={s.id}>
+                <tr>
+                  <td>{fmtDate(s.date)}</td>
+                  <td>{s.title}{s.mode === "check" ? " (check)" : ""}</td>
+                  <td>{gradeLabel(s.level)}</td>
+                  <td>{s.wcpm ?? "–"}</td>
+                  <td>{s.acc}%</td>
+                  <td>{s.comp}/{s.compTotal}</td>
+                  <td>{s.helps}</td>
+                  <td>{s.azure ? LISTENER_LABEL[s.azure.listener] : "–"}</td>
+                </tr>
+                {s.azure && (
+                  <tr>
+                    <td colSpan={8} style={{ paddingTop: 0 }}><HeardDetail d={s.azure} /></td>
+                  </tr>
+                )}
+              </Fragment>
+            )) : <tr><td colSpan={8} className="muted">No sessions yet.</td></tr>}
           </tbody>
         </table>
       </div>

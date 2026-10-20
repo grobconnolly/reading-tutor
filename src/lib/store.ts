@@ -1,5 +1,6 @@
 /* The client's view of each reader, built from Supabase rows (see lib/db/mapping.ts), plus the derived values the screens use. */
 
+import type { AzureDetail } from "@/lib/azureAlign";
 import { PASSAGES, type Passage } from "./passages";
 import type { RewardKind } from "./reward";
 import { dayKey, streakFromDays, weekKey } from "./time";
@@ -27,6 +28,8 @@ export interface SessionRec {
   /** Counts toward the weekly goal. */
   counts: boolean;
   stars: number;
+  /** What the listener heard, per word (milestone 3); null for older sessions. */
+  azure?: AzureDetail | null;
 }
 
 export interface Baseline {

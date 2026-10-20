@@ -29,6 +29,7 @@ export function rowToSession(s: SessionRow, passages: Map<string, Passage>): Ses
     helps: (s.helped_words ?? []).length,
     counts: s.counts_for_goal,
     stars: s.stars,
+    azure: s.azure_scores ?? null,
   };
 }
 

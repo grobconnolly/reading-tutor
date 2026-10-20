@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSessionPayload, planSessionSave, type SessionPayload } from "../sessionSave";
+import { parseAzureDetail, parseSessionPayload, planSessionSave, type SessionPayload } from "../sessionSave";
 
 const READER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
@@ -99,5 +99,28 @@ describe("parseSessionPayload", () => {
   it("keeps a valid check outcome", () => {
     const r = parseSessionPayload(payload({ mode: "check", check: { tested: { 3: true, 4: false }, ids: ["3a", "4b"], done: true } }));
     expect(r.ok && r.payload.check).toEqual({ tested: { 3: true, 4: false }, ids: ["3a", "4b"], done: true });
+  });
+});
+
+describe("azure detail (milestone 3)", () => {
+  const detail = { listener: "azure", scores: { accuracy: 88, fluency: 95, completeness: 93 }, inserted: ["big", "head"], words: [{ w: "Carlos", s: "miss", a: 6 }, { w: "was", s: "ok", a: 97 }, { w: "the", s: "soft", a: null }] };
+  it("accepts the reading screen's record and saves it as azure_scores", () => {
+    const parsed = parseSessionPayload({ ...payload(), azure: detail });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.payload.azure).toEqual(detail);
+    expect(planSessionSave(parsed.payload, { level: 3, weeklyGoal: 5 }, []).session.azure_scores).toEqual(detail);
+  });
+  it("saves null when the browser listened and sent nothing", () => {
+    const parsed = parseSessionPayload(payload());
+    expect(parsed.ok && parsed.payload.azure).toBeNull();
+    expect(planSessionSave(payload(), { level: 3, weeklyGoal: 5 }, []).session.azure_scores).toBeNull();
+  });
+  it("rejects a malformed record", () => {
+    expect(parseAzureDetail({ ...detail, listener: "cloud" })).toBeNull();
+    expect(parseAzureDetail({ ...detail, scores: { accuracy: 101, fluency: 1, completeness: 1 } })).toBeNull();
+    expect(parseAzureDetail({ ...detail, words: [{ w: "x", s: "nope", a: 1 }] })).toBeNull();
+    expect(parseAzureDetail({ ...detail, inserted: [42] })).toBeNull();
+    expect(parseSessionPayload({ ...payload(), azure: { listener: "azure" } }).ok).toBe(false);
   });
 });

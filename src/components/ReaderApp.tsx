@@ -222,6 +222,7 @@ export function ReaderApp() {
       wordsTotal: r.total, wordsAttempted: r.attempted, wordsCorrect: r.ok, accuracy: r.acc, wcpm: r.wcpm,
       compRight: comp, compTotal, helpedWords: r.helped, missedWords: r.missed, wonWords: f.won, finishedPct: r.finishedPct,
       check: f.mode === "check" ? { tested: f.check!.tested, ids: f.check!.ids, done: next == null } : undefined,
+      azure: r.azureDetail ?? null,
     };
     // Saves the session, bumps trouble words, recomputes the level and the reward week on the server.
     const res = await saveSession(payload, { title: p.title, level: p.level });

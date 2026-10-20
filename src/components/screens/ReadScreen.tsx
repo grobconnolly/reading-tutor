@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Coach } from "@/hooks/useCoach";
 import type { Passage } from "@/lib/passages";
-import { applyAzureSegment, AZURE_RULES, rememberAzureScores, summarizeAzure, type AzureAlignState, type AzureSegmentStat } from "@/lib/azureAlign";
+import { applyAzureSegment, AZURE_RULES, buildAzureDetail, rememberAzureScores, summarizeAzure, type AzureAlignState, type AzureSegmentStat } from "@/lib/azureAlign";
 import { RULES, scoreReading, type ReadResult } from "@/lib/scoring";
 import { getSR, hasSR, listeningEngine, listeningStatus, MIC_BLOCKED_MSG, prepareListening, type ListenEngine, type SpeechRecognizer, type SRResult } from "@/lib/speech";
 import { advanceTokens, cleanWord, toReadWords, tokenize, type AlignState, type ReadWord, type WordStatus } from "@/lib/words";
@@ -159,6 +159,7 @@ export function ReadScreen({ coach, passage, mode, kicker, intro, onFinish, onQu
     const azure = summarizeAzure(R, R.azureSegs);
     if (azure) result.azure = azure;
     if (R.listeners.size) result.listener = R.listeners.size > 1 ? "mixed" : R.listeners.has("azure") ? "azure" : "browser";
+    result.azureDetail = buildAzureDetail(R, azure, result.listener ?? "browser");
     rememberAzureScores(azure, result.listener, R.inserted.length);
     onFinishRef.current(result);
   }, [stopRec, clearTicker, render]);

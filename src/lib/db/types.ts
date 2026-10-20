@@ -1,3 +1,4 @@
+import type { AzureDetail } from "@/lib/azureAlign";
 /* Row shapes as the browser and route handlers read them from Supabase. Column lists match the grants in the migration. */
 
 import type { Question } from "@/lib/passages";
@@ -47,6 +48,8 @@ export interface SessionRow {
   comp_total: number;
   helped_words: string[];
   missed_words: string[];
+  /** What the listener heard, per word (milestone 3). Older rows have null. */
+  azure_scores?: AzureDetail | null;
   counts_for_goal: boolean;
   stars: number;
 }
@@ -89,7 +92,7 @@ export interface AppRows {
 
 /** Columns the browser is allowed to read. Keep in step with the grants in the migration. */
 export const READER_COLUMNS = "id, parent_id, name, pin_set, grade, interests, level, start_level, weekly_goal, weekly_reward_cents, reward_kind, reward_label, current_baseline_id";
-export const SESSION_COLUMNS = "id, reader_id, passage_id, mode, started_at, ended_at, accuracy, wcpm, comp_right, comp_total, helped_words, missed_words, counts_for_goal, stars";
+export const SESSION_COLUMNS = "id, reader_id, passage_id, mode, started_at, ended_at, accuracy, wcpm, comp_right, comp_total, helped_words, missed_words, azure_scores, counts_for_goal, stars";
 export const PASSAGE_COLUMNS = "id, level, title, text, questions, source, reader_id";
 export const BASELINE_COLUMNS = "id, reader_id, date, level, wcpm, passage_ids";
 export const REWARD_WEEK_COLUMNS = "reader_id, week_start, stories, earned, paid_at";
