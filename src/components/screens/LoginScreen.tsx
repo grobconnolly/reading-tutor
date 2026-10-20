@@ -10,15 +10,18 @@ export interface LoginResult {
   message?: string;
 }
 
-export function LoginScreen({ readers, onReader, onParent }: {
+export function LoginScreen({ readers, onReader, onParent, onForgot }: {
   readers: Reader[];
   onReader: (id: string, pin: string) => Promise<LoginResult>;
   onParent: (pin: string) => Promise<LoginResult>;
+  /** Parent only: clear every PIN and run setup again. The signed-in email is the proof of who is asking. */
+  onForgot?: () => Promise<LoginResult>;
 }) {
   const [who, setWho] = useState<Who | null>(null);
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -29,6 +32,15 @@ export function LoginScreen({ readers, onReader, onParent }: {
     setWho(w);
     setPin("");
     setErr("");
+    setConfirmReset(false);
+  }
+
+  async function forgot() {
+    if (!onForgot || busy) return;
+    setBusy(true);
+    const res = await onForgot();
+    setBusy(false);
+    if (!res.ok) setErr(res.message ?? "Couldn't reset the PINs. Try again.");
   }
 
   async function submit(e: React.FormEvent) {
@@ -73,6 +85,18 @@ export function LoginScreen({ readers, onReader, onParent }: {
             <button className="primary" type="submit" disabled={busy}>{busy ? "Checking…" : "Log in"}</button>
             <span className="err">{err}</span>
           </div>
+          {who.kind === "parent" && onForgot && !confirmReset && (
+            <button className="link" type="button" onClick={() => setConfirmReset(true)}>Forgot PIN?</button>
+          )}
+          {who.kind === "parent" && onForgot && confirmReset && (
+            <div className="stack-sm" style={{ alignItems: "flex-start" }}>
+              <p className="muted small">This clears the parent PIN and both reader PINs. You are signed in as the parent, so you will choose new ones on the setup screen next. Progress is kept.</p>
+              <div className="row">
+                <button className="danger" type="button" disabled={busy} onClick={() => void forgot()}>{busy ? "Resetting…" : "Reset all PINs"}</button>
+                <button className="link" type="button" onClick={() => setConfirmReset(false)}>Keep them</button>
+              </div>
+            </div>
+          )}
         </form>
       )}
     </section>

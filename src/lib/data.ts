@@ -142,6 +142,11 @@ export interface PinsBody {
 }
 
 /** Set PINs. The server hashes them and checks the parent/reader PINs are all different. Throws with a message to show. */
+/** "Forgot PIN?": clears every PIN for the signed-in parent; first-time setup then runs again. */
+export async function resetPins(): Promise<void> {
+  await postJson<{ ok: true }>("/api/pins/reset", {});
+}
+
 export async function setPins(body: PinsBody): Promise<void> {
   await postJson<{ ok: true }>("/api/pins", body);
 }

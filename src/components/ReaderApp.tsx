@@ -12,7 +12,7 @@ import { SetupScreen, type SetupData } from "@/components/screens/SetupScreen";
 import { WordPracticeScreen } from "@/components/screens/WordPracticeScreen";
 import { useAppState } from "@/hooks/useAppState";
 import { useCoach } from "@/hooks/useCoach";
-import { verifyPin } from "@/lib/data";
+import { errorMessage, resetPins, verifyPin } from "@/lib/data";
 import { checkPassageFor, type Passage } from "@/lib/passages";
 import { alreadyEarnedGreeting, goalHitLine, moreStoriesLine } from "@/lib/reward";
 import { checkPassed, nextCheckLevel, RULES, type CheckState, type ReadResult } from "@/lib/scoring";
@@ -275,6 +275,18 @@ export function ReaderApp() {
     return { ok: true };
   }
 
+  /** "Forgot PIN?": clear every PIN on the server, reload, and run first-time setup again. */
+  async function forgotPins(): Promise<LoginResult> {
+    try {
+      await resetPins();
+      await refresh();
+      setScreen({ name: "setup" });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, message: errorMessage(e) };
+    }
+  }
+
   async function loginParent(pin: string): Promise<LoginResult> {
     const res = await verifyPin("parent", pin);
     if (!res.ok) return res;
@@ -335,7 +347,7 @@ export function ReaderApp() {
     <main className="wrap">
       {COACH_SCREENS.has(screen.name) && <CoachBar coach={coach} />}
       {screen.name === "setup" && <SetupScreen readers={state.readers} onSave={onSetup} />}
-      {screen.name === "login" && <LoginScreen readers={state.readers} onReader={loginReader} onParent={loginParent} />}
+      {screen.name === "login" && <LoginScreen readers={state.readers} onReader={loginReader} onParent={loginParent} onForgot={forgotPins} />}
       {screen.name === "home" && reader && (
         <HomeScreen reader={reader} done={countedThisWeek(reader)} streak={streak(reader)} banner={banner}
           onCheck={startCheck} onPractice={startPractice} onTricky={startTricky} onLogout={logout} />
