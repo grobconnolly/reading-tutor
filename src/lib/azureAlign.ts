@@ -324,6 +324,8 @@ export interface AzureWordDetail {
   d?: number;
   /** What Azure heard, when it was not the story word itself (so a flag can be checked afterwards). */
   h?: string;
+  /** The plain pass (no story text): what it heard here when that differed, "" when it heard nothing; absent when it agreed. */
+  p?: string;
 }
 
 export interface RecordingRef {
@@ -343,6 +345,8 @@ export interface AzureDetail {
   words: AzureWordDetail[];
   /** The read's audio, added by the upload route once it is stored. */
   recording?: RecordingRef;
+  /** Set when the plain pass ran: how many words it heard, how many statuses it changed, and the extra words it heard. */
+  review?: { words: number; changed: number; extras: string[] };
 }
 
 /** `recStartMs`: epoch ms when the recording began, so each word gets a time on the recording's clock. */

@@ -11,8 +11,9 @@ import { ResultsScreen, type ResultsView } from "@/components/screens/ResultsScr
 import { SetupScreen, type SetupData } from "@/components/screens/SetupScreen";
 import { WordPracticeScreen } from "@/components/screens/WordPracticeScreen";
 import { useAppState } from "@/hooks/useAppState";
+import { reviewResult } from "@/lib/review";
 import { useCoach } from "@/hooks/useCoach";
-import { errorMessage, resetPins, uploadRecording, verifyPin } from "@/lib/data";
+import { errorMessage, resetPins, reviewRecording, uploadRecording, verifyPin } from "@/lib/data";
 import { checkPassageFor, type Passage } from "@/lib/passages";
 import { alreadyEarnedGreeting, goalHitLine, moreStoriesLine } from "@/lib/reward";
 import { checkPassed, nextCheckLevel, RULES, type CheckState, type ReadResult } from "@/lib/scoring";
@@ -34,12 +35,16 @@ interface Flow {
   mode: "check" | "practice" | "tricky";
   passage?: Passage;
   result?: ReadResult;
+  /** The second pass over the recording, started as soon as the read ends; resolves with the reviewed result or null. */
+  review?: Promise<ReadResult | null>;
   check?: CheckState;
   /** Words she passed in word practice this session (wins++ when the session is saved). */
   won: string[];
 }
 
 const DEFAULT_INTRO = "Tap start reading, then read the story out loud. If you get stuck, I'll help.";
+/** How long the results wait for the second listening pass before going on with the live one. */
+const REVIEW_WAIT_MS = 20000;
 const COACH_SCREENS = new Set(["home", "read", "words", "quiz", "results"]);
 const UNSAVED_NOTE = "I couldn't save this story. Check the internet connection and try the next one.";
 
@@ -131,11 +136,21 @@ export function ReaderApp() {
     const f = flow.current!;
     f.result = result;
     f.won = [];
+    // Second pass: transcribe the recording with no story text and settle each word from both passes. Runs while
+    // Juno talks; afterReading waits for it a little, then carries on with the live result if it is slow or fails.
+    f.review = result.recording && result.listener === "azure" && f.passage
+      ? reviewRecording(result.recording.blob, result.recording.mime)
+        .then((plain) => reviewResult(result, f.passage!.text, plain))
+        .catch(() => null)
+      : Promise.resolve(null);
     void afterReading();
   }
 
   async function afterReading() {
     const f = flow.current!;
+
+    const reviewed = await Promise.race([f.review ?? Promise.resolve(null), new Promise<null>((res) => setTimeout(() => res(null), REVIEW_WAIT_MS))]);
+    if (reviewed) f.result = reviewed;
     const r = f.result!;
     if (r.finishedPct < RULES.minFinishToSave) {
       // Too short to save as a session, but the words she missed still count as tricky, as in version 1.

@@ -285,7 +285,7 @@ function useReadPlayer(sessionId: string, has: boolean) {
 /** A word with a play button when the recording has its time. */
 function WordChip({ w, i, player }: { w: AzureDetail["words"][number]; i: number; player: ReturnType<typeof useReadPlayer> }) {
   const key = `${i}`;
-  const heard = w.h ? `, heard "${w.h}"` : "";
+  const heard = `${w.h ? `, heard "${w.h}"` : ""}${w.p != null ? (w.p ? `, plain "${w.p}"` : ", plain: not heard") : ""}`;
   const label = `${w.w}${w.s !== "ok" && STATUS_LABEL[w.s] ? ` (${STATUS_LABEL[w.s]}${w.a != null ? ` ${w.a}` : ""}${heard})` : w.a != null ? ` (${w.a}${heard})` : ""}`;
   if (w.t == null) return <span>{label}</span>;
   const on = player.playing === key;
@@ -309,7 +309,7 @@ function HeardDetail({ d, sessionId }: { d: AzureDetail; sessionId: string }) {
     <details className="small muted">
       <summary>
         {d.scores ? `Azure: pronunciation ${d.scores.accuracy}, fluency ${d.scores.fluency}, completeness ${d.scores.completeness}%. ` : "No Azure scores. "}
-        {flagged.length} flagged, {d.inserted.length} added{d.listener === "browser" ? "; words said wrong could not be checked" : ""}{d.recording ? "; recorded" : ""}.
+        {flagged.length} flagged, {d.inserted.length} added{d.listener === "browser" ? "; words said wrong could not be checked" : ""}{d.review ? `; second pass changed ${d.review.changed}` : ""}{d.recording ? "; recorded" : ""}.
       </summary>
       <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
         {flagged.length > 0 && <div><b>Flagged:</b> {list(flagged)}</div>}

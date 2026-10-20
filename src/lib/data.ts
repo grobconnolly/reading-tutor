@@ -1,6 +1,7 @@
 /* Browser-side reads and writes. Reads and plain writes go straight to Supabase under Row Level Security;
  * anything involving a PIN or a finished session goes through the API routes. */
 
+import type { PlainWord } from "@/lib/review";
 import { buildAppState, rowToBaseline } from "@/lib/db/mapping";
 import { BASELINE_COLUMNS, PASSAGE_COLUMNS, READER_COLUMNS, REWARD_WEEK_COLUMNS, SESSION_COLUMNS, TROUBLE_COLUMNS, type BaselineRow, type PassageRow, type ProfileRow, type ReaderRow, type RewardWeekRow, type SessionRow, type TroubleRow } from "@/lib/db/types";
 import type { SaveSessionResult, SessionPayload } from "@/lib/sessionSave";
@@ -142,6 +143,14 @@ export interface PinsBody {
 }
 
 /** Set PINs. The server hashes them and checks the parent/reader PINs are all different. Throws with a message to show. */
+/** The second pass: the read's audio transcribed without the story text. */
+export async function reviewRecording(blob: Blob, mime: string): Promise<PlainWord[]> {
+  const res = await fetch("/api/review", { method: "POST", headers: { "Content-Type": mime }, body: blob });
+  const data = (await res.json().catch(() => ({}))) as { words?: PlainWord[]; error?: string };
+  if (!res.ok || !Array.isArray(data.words)) throw new ApiError(res.status, data.error ?? `Review failed (${res.status}).`);
+  return data.words;
+}
+
 /** Store the audio of a read with its saved session. Errors are the caller's to ignore: a lost recording is no loss of progress. */
 export async function uploadRecording(sessionId: string, blob: Blob, mime: string, seconds: number): Promise<void> {
   const res = await fetch(`/api/recordings?sessionId=${encodeURIComponent(sessionId)}&seconds=${seconds}`, { method: "POST", headers: { "Content-Type": mime }, body: blob });

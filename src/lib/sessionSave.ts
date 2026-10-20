@@ -209,9 +209,19 @@ export function parseAzureDetail(v: unknown): AzureDetail | null {
       if (typeof w.h !== "string" || w.h.length > 60) return null;
       out.h = w.h;
     }
+    if (w.p != null) {
+      if (typeof w.p !== "string" || w.p.length > 60) return null;
+      out.p = w.p;
+    }
     words.push(out);
   }
-  return { listener: d.listener as AzureDetail["listener"], scores, inserted: d.inserted as string[], words };
+  const out: AzureDetail = { listener: d.listener as AzureDetail["listener"], scores, inserted: d.inserted as string[], words };
+  if (d.review != null) {
+    const r = d.review as Record<string, unknown>;
+    if (typeof r.words !== "number" || typeof r.changed !== "number" || !Array.isArray(r.extras) || r.extras.length > 50 || !r.extras.every((x) => typeof x === "string" && x.length <= 40)) return null;
+    out.review = { words: Math.round(r.words), changed: Math.round(r.changed), extras: r.extras as string[] };
+  }
+  return out;
 }
 
 /**
